@@ -1,3 +1,10 @@
 .env
 env
 data/
+
+# Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
