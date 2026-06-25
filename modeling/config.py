@@ -53,6 +53,15 @@ class ModelConfig:
                                        # (torch vs LightGBM's libomp) that stalls CPU training.
                                        # Ignored on GPU (Colab) — raise it on a clean CPU box.
 
+    # ---- LSTM-Q (sequence model) ----
+    lstm_hidden: int = 128
+    lstm_layers: int = 2
+    lstm_dropout: float = 0.20
+    lstm_lr: float = 3e-4
+    lstm_epochs: int = 30
+    lstm_batch: int = 256
+    lstm_weight_decay: float = 1e-4
+
     # ---- LGBM-Q (tabular / clear-sky model) ----
     lgbm_params: dict = field(default_factory=lambda: {
         "n_estimators": 800,

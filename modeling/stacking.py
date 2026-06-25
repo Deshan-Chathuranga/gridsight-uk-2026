@@ -12,8 +12,8 @@ import numpy as np
 
 
 def assemble_meta_X(tcn: dict[float, np.ndarray], lgbm: dict[float, np.ndarray],
-                    clearsky: np.ndarray, quantiles) -> np.ndarray:
-    cols = [tcn[q] for q in quantiles] + [lgbm[q] for q in quantiles] + [clearsky]
+                    lstm: dict[float, np.ndarray], clearsky: np.ndarray, quantiles) -> np.ndarray:
+    cols = [tcn[q] for q in quantiles] + [lgbm[q] for q in quantiles] + [lstm[q] for q in quantiles] + [clearsky]
     return np.column_stack(cols).astype("float32")
 
 

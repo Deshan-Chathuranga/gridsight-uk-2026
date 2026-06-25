@@ -18,7 +18,7 @@ import pandas as pd
 from .config import ModelConfig
 from .data import make_sequences
 from .clearsky import clearsky_feature
-from .base import TCNQuantile
+from .base import TCNQuantile, LSTMQuantile
 from .stacking import assemble_meta_X
 
 
@@ -30,11 +30,15 @@ def load_stack(artifacts_dir: str | Path):
     tcn = TCNQuantile(cfg, len(art["features"])).build()
     tcn.model_.load_state_dict(torch.load(Path(artifacts_dir) / "tcn.pt", map_location="cpu"))
     tcn.model_.eval()
-    return art, tcn
+
+    lstm = LSTMQuantile(cfg, len(art["features"])).build()
+    lstm.model_.load_state_dict(torch.load(Path(artifacts_dir) / "lstm.pt", map_location="cpu"))
+    lstm.model_.eval()
+    return art, tcn, lstm
 
 
 def predict_gold(df: pd.DataFrame, artifacts_dir: str | Path = "artifacts/model") -> pd.DataFrame:
-    art, tcn = load_stack(artifacts_dir)
+    art, tcn, lstm = load_stack(artifacts_dir)
     cfg: ModelConfig = art["cfg"]
     feats, std, lgbm, meta = art["features"], art["standardizer"], art["lgbm"], art["meta"]
     qnames = cfg.quantile_names()
@@ -46,7 +50,8 @@ def predict_gold(df: pd.DataFrame, artifacts_dir: str | Path = "artifacts/model"
 
     lgp = lgbm.predict(V[end_idx])
     tcp = tcn.predict(seqs)
-    preds = meta.predict(assemble_meta_X(tcp, lgp, clear[end_idx], cfg.quantiles))
+    lstmp = lstm.predict(seqs)
+    preds = meta.predict(assemble_meta_X(tcp, lgp, lstmp, clear[end_idx], cfg.quantiles))
 
     out = df.iloc[end_idx][["timestamp_utc"]].copy()
     cap = df["capacity_mwp"].to_numpy("float32")[end_idx] if "capacity_mwp" in df else 1.0

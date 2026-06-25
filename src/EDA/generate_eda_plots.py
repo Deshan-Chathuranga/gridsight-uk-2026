@@ -17,10 +17,57 @@ import seaborn as sns
 import torch
 from pathlib import Path
 
-# Setup path to import our LSTM model if needed
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "LSTM-Model"))
-from train_lstm_q import LSTMForecaster, SolarWindowDataset
+
+import torch.nn as nn
+import pytorch_lightning as pl
+
+class PinballLoss(nn.Module):
+    def __init__(self, quantiles=[0.1, 0.5, 0.9]):
+        super().__init__()
+        self.quantiles = quantiles
+    def forward(self, preds, target):
+        losses = []
+        for i, q in enumerate(self.quantiles):
+            p = preds[:, i].unsqueeze(1)
+            e = target - p
+            losses.append(torch.mean(torch.where(e >= 0, q * e, (q - 1) * e)))
+        return torch.stack(losses).mean()
+
+class LSTMForecaster(pl.LightningModule):
+    def __init__(
+        self,
+        n_features: int,
+        hidden_size: int = 128,
+        num_layers: int = 2,
+        dropout: float = 0.20,
+        quantiles=[0.1, 0.5, 0.9],
+        lr: float = 3e-4,
+        weight_decay: float = 1e-4,
+    ):
+        super().__init__()
+        self.save_hyperparameters()
+        self.quantiles = quantiles
+        self.lstm = nn.LSTM(
+            input_size=n_features,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0.0,
+        )
+        self.head = nn.Sequential(
+            nn.LayerNorm(hidden_size),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.GELU(),
+            nn.Linear(hidden_size // 2, len(quantiles)),
+        )
+        self.criterion = PinballLoss(quantiles)
+
+    def forward(self, x):
+        out, _ = self.lstm(x)
+        last = out[:, -1, :]
+        return self.head(last)
 
 # Define colors for GridSight UI Design System (Premium Aesthetics)
 NAVY = "#182b49"       # Deep Navy (Primary brand color)
@@ -252,22 +299,30 @@ def generate_forecast_case_study(output_dir):
     # We will load the features from the Gold store, load the scaler, and the model
     # dynamically to run out-of-sample inference.
     
-    # Load checkpoint
-    ckpt_path = "model_artefacts/lstm_q_best.ckpt"
-    scaler_path = "model_artefacts/feature_scaler.pkl"
-    features_path = "model_artefacts/lstm_features.json"
+    # Load checkpoint from new stacking artifacts
+    stack_path = "artifacts/model/stack.joblib"
+    lstm_weights_path = "artifacts/model/lstm.pt"
     
-    if not (os.path.exists(ckpt_path) and os.path.exists(scaler_path) and os.path.exists(features_path)):
-        print("⚠️ Model artifacts not found. Skipping model prediction case study visualization.")
+    if not (os.path.exists(stack_path) and os.path.exists(lstm_weights_path)):
+        print("⚠️ Stacking model artifacts not found. Skipping model prediction case study visualization.")
         return
         
-    print("  -> Loading LSTM-Q model and scaler for live prediction...")
-    model = LSTMForecaster.load_from_checkpoint(ckpt_path)
-    model.eval()
+    print("  -> Loading LSTM-Q model and scaler from stacking artifacts...")
+    import joblib
+    art = joblib.load(stack_path)
+    features = art["features"]
+    scaler = art["standardizer"]
+    cfg = art["cfg"]
     
-    scaler = joblib.load(scaler_path)
-    with open(features_path) as f:
-        features = json.load(f)
+    model = LSTMForecaster(
+        n_features=len(features),
+        hidden_size=cfg.lstm_hidden,
+        num_layers=cfg.lstm_layers,
+        dropout=cfg.lstm_dropout,
+        quantiles=cfg.quantiles,
+    )
+    model.load_state_dict(torch.load(lstm_weights_path, map_location="cpu"))
+    model.eval()
         
     # Read entire Gold features table
     files = sorted(glob.glob("data/gold/gold_features_h48/**/*.parquet", recursive=True))
