@@ -24,7 +24,7 @@ from loguru import logger
 from .config import ModelConfig
 from .data import prepare, make_sequences, Standardizer
 from .clearsky import clearsky_feature
-from .base import LGBMQuantile, TCNQuantile, LSTMQuantile
+from .base import LGBMQuantile, TCNQuantile
 from .stacking import LinearQuantileStacker, assemble_meta_X
 from . import metrics
 
@@ -37,21 +37,6 @@ def _tcn_fit_rows(cfg, seqs, seqpos_of_row, rows, y):
 
 
 def _tcn_predict_rows(model, seqs, seqpos_of_row, rows):
-    """Predict only rows that have a full window; returns (preds_dict, ok_mask)."""
-    pos = seqpos_of_row[rows]
-    ok = pos >= 0
-    preds = model.predict(seqs[pos[ok]])
-    return preds, ok
-
-
-def _lstm_fit_rows(cfg, seqs, seqpos_of_row, rows, y):
-    pos = seqpos_of_row[rows]
-    ok = pos >= 0
-    model = LSTMQuantile(cfg, n_features=seqs.shape[2]).fit(seqs[pos[ok]], y[rows][ok])
-    return model
-
-
-def _lstm_predict_rows(model, seqs, seqpos_of_row, rows):
     """Predict only rows that have a full window; returns (preds_dict, ok_mask)."""
     pos = seqpos_of_row[rows]
     ok = pos >= 0
@@ -86,7 +71,6 @@ def run(cfg: ModelConfig) -> dict:
     train_rows = np.where(tr_mask & score)[0]
     oof_lgbm = {q: np.full(len(df), np.nan, "float32") for q in qs}
     oof_tcn = {q: np.full(len(df), np.nan, "float32") for q in qs}
-    oof_lstm = {q: np.full(len(df), np.nan, "float32") for q in qs}
 
     for k, (tr_i, va_i) in enumerate(TimeSeriesSplit(cfg.n_folds).split(train_rows), 1):
         rtr, rva = train_rows[tr_i], train_rows[va_i]
@@ -98,17 +82,12 @@ def run(cfg: ModelConfig) -> dict:
         preds, ok = _tcn_predict_rows(tcn, seqs, seqpos_of_row, rva)
         for q in qs:
             oof_tcn[q][rva[ok]] = preds[q]
-        lstm = _lstm_fit_rows(cfg, seqs, seqpos_of_row, rtr, y)
-        preds_lstm, ok_lstm = _lstm_predict_rows(lstm, seqs, seqpos_of_row, rva)
-        for q in qs:
-            oof_lstm[q][rva[ok_lstm]] = preds_lstm[q]
 
-    # meta training rows: have all base OOF preds
+    # meta training rows: have both base OOF preds
     meta_rows = np.where(tr_mask & score & np.isfinite(oof_tcn[qs[0]]) &
-                         np.isfinite(oof_lgbm[qs[0]]) & np.isfinite(oof_lstm[qs[0]]))[0]
+                         np.isfinite(oof_lgbm[qs[0]]))[0]
     Z_oof = assemble_meta_X({q: oof_tcn[q][meta_rows] for q in qs},
                             {q: oof_lgbm[q][meta_rows] for q in qs},
-                            {q: oof_lstm[q][meta_rows] for q in qs},
                             clear[meta_rows], qs)
     meta = LinearQuantileStacker(qs).fit(Z_oof, y[meta_rows])
     logger.success(f"meta-learner fit on {len(meta_rows)} OOF rows")
@@ -116,16 +95,14 @@ def run(cfg: ModelConfig) -> dict:
     # ---------- 4) refit base on full train, predict val/test ----------
     lg_full = LGBMQuantile(qs, cfg.lgbm_params, cfg.seed).fit(V[train_rows], y[train_rows])
     tcn_full = _tcn_fit_rows(cfg, seqs, seqpos_of_row, train_rows, y)
-    lstm_full = _lstm_fit_rows(cfg, seqs, seqpos_of_row, train_rows, y)
 
     def predict_split(mask) -> tuple[dict, np.ndarray]:
         rows = np.where(mask & score)[0]
         pos_ok = seqpos_of_row[rows] >= 0
-        rows = rows[pos_ok]                              # need a full window for TCN/LSTM
+        rows = rows[pos_ok]                              # need a full window for the TCN
         lgp = lg_full.predict(V[rows])
         tcp, _ = _tcn_predict_rows(tcn_full, seqs, seqpos_of_row, rows)
-        lstmp, _ = _lstm_predict_rows(lstm_full, seqs, seqpos_of_row, rows)
-        Z = assemble_meta_X(tcp, lgp, lstmp, clear[rows], qs)
+        Z = assemble_meta_X(tcp, lgp, clear[rows], qs)
         return meta.predict(Z), rows
 
     ts = df["timestamp_utc"].to_numpy()
@@ -144,7 +121,7 @@ def run(cfg: ModelConfig) -> dict:
         _save_predictions(cfg, name, ts[rows], y[rows], preds,
                           cap[rows] if cap is not None else None, base_cf)
 
-    _save_artifacts(cfg, lg_full, tcn_full, lstm_full, meta, std, ds.feature_cols, results)
+    _save_artifacts(cfg, lg_full, tcn_full, meta, std, ds.feature_cols, results)
     return results
 
 
@@ -162,7 +139,7 @@ def _save_predictions(cfg, name, ts, y_true, preds, cap, base):
     out.to_parquet(Path(cfg.artifacts_dir) / f"pred_{name}.parquet", index=False)
 
 
-def _save_artifacts(cfg, lg, tcn, lstm, meta, std, feat_cols, results):
+def _save_artifacts(cfg, lg, tcn, meta, std, feat_cols, results):
     out = Path(cfg.artifacts_dir)
     out.mkdir(parents=True, exist_ok=True)
     try:
@@ -170,7 +147,6 @@ def _save_artifacts(cfg, lg, tcn, lstm, meta, std, feat_cols, results):
         joblib.dump({"lgbm": lg, "meta": meta, "standardizer": std,
                      "features": feat_cols, "cfg": cfg}, out / "stack.joblib")
         torch.save(tcn.model_.state_dict(), out / "tcn.pt")
-        torch.save(lstm.model_.state_dict(), out / "lstm.pt")
     except Exception as e:
         logger.warning(f"artifact save skipped: {e}")
     (out / "metrics.json").write_text(json.dumps(results, indent=2))

@@ -496,13 +496,22 @@ The forecasting system is a **Quantile Forecasting Stacking Stack** combining se
 ./venv/bin/python -m data_ingestion.gold --horizon-steps 48
 ```
 
-**Step 2 — Train the Stacking Model**:
+**Step 2 — Train the Stacking Model (Model A: TCN-Q + LGBM-Q ➔ Linear-Q)**:
 ```bash
-# Full training (highly recommended, TCN/LSTM auto-detect GPU/CUDA/MPS):
+# Full training (TCN and LGBM base models + Linear meta-stacker):
 ./venv/bin/python -m modeling --horizon-steps 48 --gold-dir data/gold/gold_features_h48
 
 # Fast smoke run (for quick validation and CPU testing):
 ./venv/bin/python -m modeling --fast
+```
+
+**Step 3 — Train the Standalone LSTM-Q Model (Model B)**:
+```bash
+# Full training (LSTM model with early stopping & calibration):
+./venv/bin/python -m modeling.train_lstm --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+
+# Fast smoke run (for quick validation and CPU testing):
+./venv/bin/python -m modeling.train_lstm --fast
 ```
 
 #### CLI Parameters
