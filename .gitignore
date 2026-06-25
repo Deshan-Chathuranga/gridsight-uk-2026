@@ -1,6 +1,7 @@
 .env
 env
 data/
+test/
 
 # Python bytecode and cache
 __pycache__/
