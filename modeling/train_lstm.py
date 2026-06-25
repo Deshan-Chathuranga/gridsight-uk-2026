@@ -193,15 +193,9 @@ def run_lstm_pipeline(cfg: ModelConfig) -> dict:
         results[name] = rep
         logger.info(f"[LSTM {name}] " + " ".join(f"{k}={v:.4f}" for k, v in rep.items()))
 
-        # Save predictions in MW
-        out_preds = {}
+        # Save predictions (on capacity factor scale if target_cf)
         cap_split = cap[r_ok] if cap is not None else np.ones(len(r_ok), dtype="float32")
-        day_split = df["is_daylight"].to_numpy()[r_ok] if "is_daylight" in df else np.ones(len(r_ok))
-        for q in qs:
-            p = preds[q] * cap_split if cfg.target == "target_cf" else preds[q]
-            out_preds[q] = np.where(day_split == 1, p, 0.0).astype("float32")
-
-        _save_lstm_predictions(cfg, name, ts[r_ok], y[r_ok], out_preds,
+        _save_lstm_predictions(cfg, name, ts[r_ok], y[r_ok], preds,
                                cap_split, base_cf)
 
     _save_lstm_artifacts(cfg, lstm, std, ds.feature_cols, best_factor, results)
