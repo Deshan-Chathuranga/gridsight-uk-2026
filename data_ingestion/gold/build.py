@@ -44,12 +44,21 @@ def build_gold(horizon: int = DEFAULT_HORIZON) -> pd.DataFrame:
     return df
 
 
-def run(horizon: int = DEFAULT_HORIZON, upload: bool = False) -> None:
+def run(horizon: int = DEFAULT_HORIZON, upload: bool = False, table: str | None = None) -> None:
     df = build_gold(horizon)
     if df.empty:
         return
     validate_gold(df, horizon)
-    write_gold(df, GOLD_TABLE)
+    
+    if table is None:
+        table = f"{GOLD_TABLE}_h{horizon}"
+        
+    write_gold(df, table)
+    
+    # For backward compatibility, also write to the standard "gold_features" if horizon is 48
+    if horizon == 48 and table != GOLD_TABLE:
+        write_gold(df, GOLD_TABLE)
+        
     if upload:
         from .upload import upload_gold_to_hf
         upload_gold_to_hf()
