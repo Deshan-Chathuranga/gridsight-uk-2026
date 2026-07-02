@@ -139,23 +139,49 @@ def run_lstm_pipeline(cfg: ModelConfig) -> dict:
     y_val_mw = df["target_mw"].to_numpy("float32")[val_rows_ok] if "target_mw" in df else y_val_cf
     cap_val = cap[val_rows_ok] if cap is not None else np.ones(len(val_rows_ok), dtype="float32")
 
-    best_factor = 1.0
+    cos_val = df["clearsky_cos"].to_numpy("float32")[val_rows_ok]
+
+    best_w, best_k = 1.2, 0.5
     best_diff = 1.0
     best_cov = 0.8
-    for factor in np.linspace(0.5, 1.5, 101):
-        q50 = np.clip(preds_val_raw[0.5] * cap_val, 0, None)
-        q10 = np.clip((preds_val_raw[0.5] - (preds_val_raw[0.5] - preds_val_raw[0.1]) * factor) * cap_val, 0, None)
-        q90 = np.clip((preds_val_raw[0.5] + (preds_val_raw[0.9] - preds_val_raw[0.5]) * factor) * cap_val, 0, None)
-        q10 = np.minimum(q10, q50)
-        q90 = np.maximum(q90, q50)
-        cov = np.mean((y_val_mw >= q10) & (y_val_mw <= q90))
-        diff = abs(cov - 0.80)
-        if diff < best_diff:
-            best_diff = diff
-            best_factor = factor
-            best_cov = cov
+    best_pinball = 999.0
 
-    logger.info(f"Optimal post-hoc calibration factor selected: {best_factor:.3f} (Val Coverage: {best_cov:.2%})")
+    # Grid search for w (base multiplier) and k (offset)
+    W_space = np.linspace(0.1, 3.0, 150)
+    K_space = np.linspace(0.01, 1.0, 100)
+
+    for k in K_space:
+        for w in W_space:
+            factor = w / (cos_val + k)
+            q50 = np.clip(preds_val_raw[0.5] * cap_val, 0, None)
+            q10 = np.clip((preds_val_raw[0.5] - (preds_val_raw[0.5] - preds_val_raw[0.1]) * factor) * cap_val, 0, None)
+            q90 = np.clip((preds_val_raw[0.5] + (preds_val_raw[0.9] - preds_val_raw[0.5]) * factor) * cap_val, 0, None)
+            q10 = np.minimum(q10, q50)
+            q90 = np.maximum(q90, q50)
+            cov = np.mean((y_val_mw >= q10) & (y_val_mw <= q90))
+            diff = abs(cov - 0.80)
+
+            # Constraint: validation coverage must be close to 80%
+            if diff < 0.005:
+                p_dict = {
+                    0.1: (preds_val_raw[0.5] - (preds_val_raw[0.5] - preds_val_raw[0.1]) * factor),
+                    0.5: preds_val_raw[0.5],
+                    0.9: (preds_val_raw[0.5] + (preds_val_raw[0.9] - preds_val_raw[0.5]) * factor)
+                }
+                p_dict[0.1] = np.minimum(p_dict[0.1], p_dict[0.5])
+                p_dict[0.9] = np.maximum(p_dict[0.9], p_dict[0.5])
+
+                rep = metrics.report(y_val_cf, p_dict, qs)
+                p_loss = rep["mean_pinball"]
+                if p_loss < best_pinball:
+                    best_pinball = p_loss
+                    best_diff = diff
+                    best_w = w
+                    best_k = k
+                    best_cov = cov
+
+    best_factor = (float(best_w), float(best_k))
+    logger.info(f"Optimal post-hoc dynamic calibration selected: factor = {best_w:.3f} / (clearsky_cos + {best_k:.3f}) (Val Coverage: {best_cov:.2%})")
 
     # Helper function to predict and calibrate a split
     def predict_and_calibrate(rows_split) -> tuple[dict[float, np.ndarray], np.ndarray]:
@@ -165,11 +191,15 @@ def run_lstm_pipeline(cfg: ModelConfig) -> dict:
         raw_p = lstm.predict(seqs[pos[ok]])
         
         q50 = raw_p[0.5]
-        q10 = q50 - (q50 - raw_p[0.1]) * best_factor
-        q90 = q50 + (raw_p[0.9] - q50) * best_factor
+        w, k = best_factor
+        cos_split = df["clearsky_cos"].to_numpy("float32")[r_ok]
+        factor = w / (cos_split + k)
+        
+        q10 = q50 - (q50 - raw_p[0.1]) * factor
+        q90 = q50 + (raw_p[0.9] - q50) * factor
         
         # Enforce monotonicity
-        q10 = np.minimum(q10, q50)
+        q10 = np.minimum(np.maximum(q10, 0), q50)
         q90 = np.maximum(q90, q50)
         
         return {0.1: q10, 0.5: q50, 0.9: q90}, r_ok
@@ -203,7 +233,10 @@ def run_lstm_pipeline(cfg: ModelConfig) -> dict:
 
 
 def _save_lstm_predictions(cfg, name, ts, y_true, preds, cap, base):
-    out_dir = Path(cfg.artifacts_dir).parent / "lstm"
+    if cfg.horizon_steps != 48:
+        out_dir = Path(cfg.artifacts_dir).parent / f"lstm_h{cfg.horizon_steps}"
+    else:
+        out_dir = Path(cfg.artifacts_dir).parent / "lstm"
     out_dir.mkdir(parents=True, exist_ok=True)
     out = pd.DataFrame({"timestamp_utc": ts, "y_true": y_true})
     for q in cfg.quantiles:
@@ -217,7 +250,10 @@ def _save_lstm_predictions(cfg, name, ts, y_true, preds, cap, base):
 
 
 def _save_lstm_artifacts(cfg, lstm, std, feat_cols, calib_factor, results):
-    out_dir = Path(cfg.artifacts_dir).parent / "lstm"
+    if cfg.horizon_steps != 48:
+        out_dir = Path(cfg.artifacts_dir).parent / f"lstm_h{cfg.horizon_steps}"
+    else:
+        out_dir = Path(cfg.artifacts_dir).parent / "lstm"
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         import joblib, torch
@@ -234,29 +270,53 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Train Standalone LSTM-Q forecasting pipeline")
     p.add_argument("--target", default="target_cf", choices=["target_cf", "target_mw"])
     p.add_argument("--horizon-steps", type=int, default=48)
-    p.add_argument("--seq-len", type=int, default=126)
-    p.add_argument("--epochs", type=int, default=40, help="LSTM training epochs")
+    p.add_argument("--seq-len", type=int, default=None)
+    p.add_argument("--epochs", type=int, default=None, help="LSTM training epochs")
     p.add_argument("--batch-size", type=int, default=256)
-    p.add_argument("--lr", type=float, default=3e-4)
+    p.add_argument("--lr", type=float, default=None)
     p.add_argument("--gold-dir", default=None)
     p.add_argument("--fast", action="store_true", help="quick smoke run")
     args = p.parse_args()
 
     cfg = ModelConfig()
+
+    # Try loading best params from tuning
+    best_params_path = Path("configs/best_lstm_params.json")
+    if best_params_path.exists():
+        try:
+            best_params = json.loads(best_params_path.read_text())
+            logger.info(f"Loading tuned hyperparameters from {best_params_path}: {best_params}")
+            cfg = dataclasses.replace(
+                cfg,
+                lstm_hidden=best_params.get("lstm_hidden", cfg.lstm_hidden),
+                lstm_layers=best_params.get("lstm_layers", cfg.lstm_layers),
+                lstm_dropout=best_params.get("lstm_dropout", cfg.lstm_dropout),
+                lstm_lr=best_params.get("lstm_lr", cfg.lstm_lr),
+                lstm_weight_decay=best_params.get("lstm_weight_decay", cfg.lstm_weight_decay),
+                seq_len=best_params.get("seq_len", cfg.seq_len)
+            )
+        except Exception as e:
+            logger.warning(f"Failed to load tuned parameters: {e}")
+
+    # Override defaults with CLI args if provided
+    seq_len = args.seq_len if args.seq_len is not None else cfg.seq_len
+    epochs = args.epochs if args.epochs is not None else cfg.lstm_epochs
+    lr = args.lr if args.lr is not None else cfg.lstm_lr
+
     if args.gold_dir:
         cfg = dataclasses.replace(cfg, gold_dir=Path(args.gold_dir))
     cfg = dataclasses.replace(
         cfg,
         target=args.target, horizon_steps=args.horizon_steps,
-        seq_len=args.seq_len, lstm_epochs=args.epochs,
-        lstm_batch=args.batch_size, lstm_lr=args.lr,
+        seq_len=seq_len, lstm_epochs=epochs,
+        lstm_batch=args.batch_size, lstm_lr=lr,
     )
     if args.fast:
         cfg = dataclasses.replace(
             cfg, lstm_epochs=2, seq_len=48, lstm_hidden=32,
         )
 
-    logger.info(f"LSTM config: target={cfg.target} seq_len={cfg.seq_len} epochs={cfg.lstm_epochs} batch={cfg.lstm_batch} lr={cfg.lstm_lr}")
+    logger.info(f"LSTM config: target={cfg.target} seq_len={cfg.seq_len} epochs={cfg.lstm_epochs} batch={cfg.lstm_batch} lr={cfg.lstm_lr} hidden={cfg.lstm_hidden} layers={cfg.lstm_layers} dropout={cfg.lstm_dropout} weight_decay={cfg.lstm_weight_decay}")
     run_lstm_pipeline(cfg)
 
 

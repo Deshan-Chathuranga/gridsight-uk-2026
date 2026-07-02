@@ -78,5 +78,10 @@ class ModelConfig:
     # ---- stacking ----
     n_folds: int = 5                   # out-of-fold CV for the meta-learner
 
+    def __post_init__(self):
+        # Dynamically separate artifact directories by horizon steps if not default (48)
+        if self.horizon_steps != 48:
+            self.artifacts_dir = Path(f"artifacts/model_h{self.horizon_steps}")
+
     def quantile_names(self) -> list[str]:
         return [f"q{int(q*100)}" for q in self.quantiles]

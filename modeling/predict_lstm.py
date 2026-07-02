@@ -43,11 +43,21 @@ def predict_lstm_gold(df: pd.DataFrame, artifacts_dir: str | Path = "artifacts/l
     
     # Apply calibration factor
     q50 = raw_p[0.5]
-    q10 = q50 - (q50 - raw_p[0.1]) * calib_factor
-    q90 = q50 + (raw_p[0.9] - q50) * calib_factor
+    if isinstance(calib_factor, (tuple, list)):
+        w, k = calib_factor
+        if "clearsky_cos" in df.columns:
+            cos = df["clearsky_cos"].to_numpy("float32")[end_idx]
+            factor = w / (cos + k)
+        else:
+            factor = w / (1.0 + k)
+    else:
+        factor = calib_factor
+
+    q10 = q50 - (q50 - raw_p[0.1]) * factor
+    q90 = q50 + (raw_p[0.9] - q50) * factor
     
     # Enforce monotonicity
-    q10 = np.minimum(q10, q50)
+    q10 = np.minimum(np.maximum(q10, 0), q50)
     q90 = np.maximum(q90, q50)
 
     out = df.iloc[end_idx][["timestamp_utc"]].copy()

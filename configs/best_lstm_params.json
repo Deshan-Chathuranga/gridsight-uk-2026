@@ -1,0 +1,8 @@
+{
+  "lstm_hidden": 128,
+  "lstm_layers": 1,
+  "lstm_dropout": 0.1,
+  "lstm_lr": 0.001,
+  "lstm_weight_decay": 0.01,
+  "seq_len": 48
+}
