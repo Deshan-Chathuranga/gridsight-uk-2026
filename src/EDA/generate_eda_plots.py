@@ -14,60 +14,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import seaborn as sns
-import torch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-import torch.nn as nn
-import pytorch_lightning as pl
-
-class PinballLoss(nn.Module):
-    def __init__(self, quantiles=[0.1, 0.5, 0.9]):
-        super().__init__()
-        self.quantiles = quantiles
-    def forward(self, preds, target):
-        losses = []
-        for i, q in enumerate(self.quantiles):
-            p = preds[:, i].unsqueeze(1)
-            e = target - p
-            losses.append(torch.mean(torch.where(e >= 0, q * e, (q - 1) * e)))
-        return torch.stack(losses).mean()
-
-class LSTMForecaster(pl.LightningModule):
-    def __init__(
-        self,
-        n_features: int,
-        hidden_size: int = 128,
-        num_layers: int = 2,
-        dropout: float = 0.20,
-        quantiles=[0.1, 0.5, 0.9],
-        lr: float = 3e-4,
-        weight_decay: float = 1e-4,
-    ):
-        super().__init__()
-        self.save_hyperparameters()
-        self.quantiles = quantiles
-        self.lstm = nn.LSTM(
-            input_size=n_features,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout if num_layers > 1 else 0.0,
-        )
-        self.head = nn.Sequential(
-            nn.LayerNorm(hidden_size),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_size, hidden_size // 2),
-            nn.GELU(),
-            nn.Linear(hidden_size // 2, len(quantiles)),
-        )
-        self.criterion = PinballLoss(quantiles)
-
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        last = out[:, -1, :]
-        return self.head(last)
 
 # Define colors for GridSight UI Design System (Premium Aesthetics)
 NAVY = "#182b49"       # Deep Navy (Primary brand color)
@@ -288,9 +237,201 @@ def generate_gold_eda(output_dir):
     fig.savefig(os.path.join(output_dir, "gold_weather_vs_generation.png"), bbox_inches='tight')
     plt.close(fig)
 
+def generate_feature_importance(output_dir):
+    print("  -> Plotting feature importance comparison...")
+    stack_path = "artifacts/model/stack.joblib"
+    
+    # Load LGBM feature importances
+    if not os.path.exists(stack_path):
+        print("⚠️ Stacking model artifacts not found. Skipping LGBM feature importance.")
+        return
+        
+    import joblib
+    import json
+    art = joblib.load(stack_path)
+    features = art["features"]
+    lgbm = art["lgbm"]
+    
+    # Calculate feature importances for each quantile
+    importances_q = {}
+    for q, m in lgbm.models_.items():
+        importances_q[q] = m.feature_importances_
+        
+    # Create DataFrame
+    df_imp = pd.DataFrame(importances_q, index=features)
+    df_imp['mean'] = df_imp.mean(axis=1)
+    df_imp = df_imp.sort_values(by='mean', ascending=False)
+    
+    # Take top 15 features
+    df_top_lgbm = df_imp.head(15).copy()
+    
+    # Clean feature names for readability
+    rename_dict = {
+        'capacity_mwp': 'Capacity (MWp)',
+        'ssrd_uk': 'Solar Irradiance (SSRD)',
+        'tcc_uk': 'Total Cloud Cover (UK)',
+        'lcc_uk': 'Low Cloud Cover (UK)',
+        't2m_uk': 'Temperature (2m)',
+        'ws10_uk': 'Wind Speed (10m)',
+        'nwp_age_h': 'NWP Forecast Age (h)',
+        'embedded_solar_mw': 'NESO Embedded Solar MW',
+        'embedded_wind_mw': 'NESO Embedded Wind MW',
+        'embedded_solar_capacity_mw': 'NESO Solar Capacity MW',
+        'embedded_wind_capacity_mw': 'NESO Wind Capacity MW',
+        'hour': 'Hour of Day',
+        'half_hour': 'Half Hour Index',
+        'dow': 'Day of Week',
+        'month': 'Month',
+        'doy': 'Day of Year',
+        'is_weekend': 'Is Weekend (Flag)',
+        'tod_sin': 'Time of Day (Sin)',
+        'tod_cos': 'Time of Day (Cos)',
+        'doy_sin': 'Day of Year (Sin)',
+        'doy_cos': 'Day of Year (Cos)',
+        'solar_elevation_deg': 'Solar Elevation Angle',
+        'clearsky_cos': 'Clear-Sky Cosine',
+        'is_daylight': 'Is Daylight (Flag)',
+        'gen_lag_48': 'Generation Lag (48h)',
+        'cf_lag_48': 'Capacity Factor Lag (48h)',
+        'gen_lag_96': 'Generation Lag (96h)',
+        'cf_lag_96': 'Capacity Factor Lag (96h)',
+        'gen_lag_144': 'Generation Lag (144h)',
+        'cf_lag_144': 'Capacity Factor Lag (144h)',
+        'gen_lag_336': 'Generation Lag (336h)',
+        'cf_lag_336': 'Capacity Factor Lag (336h)',
+        'gen_roll_mean_48': 'Gen Roll Mean (48h)',
+        'gen_roll_mean_336': 'Gen Roll Mean (336h)',
+        'gen_roll_std_48': 'Gen Roll Std (48h)',
+        'cf_roll_mean_48': 'CF Roll Mean (48h)',
+        'cf_roll_mean_336': 'CF Roll Mean (336h)',
+        'ocf_lag_48': 'OCF Generation Lag (48h)',
+        'ocf_roll_mean_48': 'OCF Gen Roll Mean (48h)'
+    }
+    df_top_lgbm.index = [rename_dict.get(col, col) for col in df_top_lgbm.index]
+    df_top_lgbm = df_top_lgbm.iloc[::-1]
+    
+    # Load LSTM permutation feature importances by running the helper script as a subprocess
+    lstm_imp = None
+    helper_script = os.path.join(os.path.dirname(__file__), "compute_lstm_importance.py")
+    if os.path.exists(helper_script):
+        try:
+            print("  -> Invoking helper process to calculate LSTM Permutation Importance (dynamic evaluation)...")
+            import subprocess
+            import sys
+            
+            # Use current virtual environment's python interpreter to run the helper script
+            result = subprocess.run([sys.executable, helper_script], capture_output=True, text=True, check=True)
+            output = result.stdout.strip()
+            
+            # Check if output is empty or if error occurs
+            if output:
+                lstm_imp = json.loads(output)
+                if "error" in lstm_imp:
+                    print(f"⚠️ LSTM helper reported: {lstm_imp['error']}")
+                    lstm_imp = None
+            else:
+                print(f"⚠️ Empty output from LSTM helper. Stderr: {result.stderr}")
+                
+        except Exception as e:
+            print(f"⚠️ Error evaluating LSTM permutation importance: {e}")
+            lstm_imp = None
+    else:
+        print(f"⚠️ Helper script not found at {helper_script}")
+            
+    # Setup subplots for comparison
+    if lstm_imp is not None:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6.5), dpi=300)
+    else:
+        fig, ax1 = plt.subplots(figsize=(9, 6.5), dpi=300)
+        ax2 = None
+        
+    # Plot LGBM (left subplot)
+    y_positions = np.arange(len(df_top_lgbm))
+    bar_width = 0.25
+    ax1.barh(y_positions - bar_width, df_top_lgbm[0.1], bar_width, label="Quantile 0.1 (Low Gen)", color=LIGHT_SKY, edgecolor='none', alpha=0.9)
+    ax1.barh(y_positions, df_top_lgbm[0.5], bar_width, label="Quantile 0.5 (Median)", color=SKY, edgecolor='none', alpha=0.9)
+    ax1.barh(y_positions + bar_width, df_top_lgbm[0.9], bar_width, label="Quantile 0.9 (High Gen)", color=NAVY, edgecolor='none', alpha=0.9)
+    ax1.set_yticks(y_positions)
+    ax1.set_yticklabels(df_top_lgbm.index, color=NAVY, fontweight='semibold')
+    ax1.set_xlabel("LGBM Split Importance Count", color=NAVY, fontweight='semibold')
+    ax1.set_title("A. LightGBM Base Learner Feature Importance\n(Split Count proxy for Quantiles)", color=NAVY, weight='bold', fontsize=11)
+    ax1.legend(loc='lower right', frameon=True, facecolor='white', edgecolor='#e2e8f0')
+    
+    # Plot LSTM (right subplot)
+    if ax2 is not None:
+        df_lstm = pd.Series(lstm_imp).sort_values(ascending=False)
+        df_top_lstm = df_lstm.head(15).copy()
+        df_top_lstm.index = [rename_dict.get(col, col) for col in df_top_lstm.index]
+        df_top_lstm = df_top_lstm.iloc[::-1]
+        
+        y_pos_lstm = np.arange(len(df_top_lstm))
+        ax2.barh(y_pos_lstm, df_top_lstm.values, bar_width * 3, color=CORAL, edgecolor='none', alpha=0.9, label="Permutation Delta Loss")
+        ax2.set_yticks(y_pos_lstm)
+        ax2.set_yticklabels(df_top_lstm.index, color=NAVY, fontweight='semibold')
+        ax2.set_xlabel("Increase in Pinball Loss (Permutation Importance)", color=NAVY, fontweight='semibold')
+        ax2.set_title("B. LSTM-Q Neural Network Feature Importance\n(Out-of-Sample Permutation Importance on Test Split)", color=NAVY, weight='bold', fontsize=11)
+        ax2.legend(loc='lower right', frameon=True, facecolor='white', edgecolor='#e2e8f0')
+        
+    plt.suptitle("GridSight UK: Feature Importance Diagnostics Comparison\n(LGBM Tabular Features vs. LSTM Temporal Sequence Learner)", color=NAVY, weight='bold', fontsize=13)
+    plt.tight_layout()
+    fig.savefig(os.path.join(output_dir, "gold_feature_importance.png"), bbox_inches='tight')
+    plt.close(fig)
+    print("  -> Feature importance comparison visualization successfully saved!")
+
 def generate_forecast_case_study(output_dir):
     print("📊 Generating Part C: Model Forecast Case Study Plot...")
     
+    import torch
+    import torch.nn as nn
+    import pytorch_lightning as pl
+
+    class PinballLoss(nn.Module):
+        def __init__(self, quantiles=[0.1, 0.5, 0.9]):
+            super().__init__()
+            self.quantiles = quantiles
+        def forward(self, preds, target):
+            losses = []
+            for i, q in enumerate(self.quantiles):
+                p = preds[:, i].unsqueeze(1)
+                e = target - p
+                losses.append(torch.mean(torch.where(e >= 0, q * e, (q - 1) * e)))
+            return torch.stack(losses).mean()
+
+    class LSTMForecaster(pl.LightningModule):
+        def __init__(
+            self,
+            n_features: int,
+            hidden_size: int = 128,
+            num_layers: int = 2,
+            dropout: float = 0.20,
+            quantiles=[0.1, 0.5, 0.9],
+            lr: float = 3e-4,
+            weight_decay: float = 1e-4,
+        ):
+            super().__init__()
+            self.save_hyperparameters()
+            self.quantiles = quantiles
+            self.lstm = nn.LSTM(
+                input_size=n_features,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                batch_first=True,
+                dropout=dropout if num_layers > 1 else 0.0,
+            )
+            self.head = nn.Sequential(
+                nn.LayerNorm(hidden_size),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_size, hidden_size // 2),
+                nn.GELU(),
+                nn.Linear(hidden_size // 2, len(quantiles)),
+            )
+            self.criterion = PinballLoss(quantiles)
+
+        def forward(self, x):
+            out, _ = self.lstm(x)
+            last = out[:, -1, :]
+            return self.head(last)
+            
     # Load 24h ahead model features and predict for a specific test window
     # Target window: July 22 to July 24, 2024 (A highly dynamic summer week)
     start_date = "2024-07-22 00:00:00+00:00"
@@ -299,17 +440,17 @@ def generate_forecast_case_study(output_dir):
     # We will load the features from the Gold store, load the scaler, and the model
     # dynamically to run out-of-sample inference.
     
-    # Load checkpoint from new stacking artifacts
-    stack_path = "artifacts/model/stack.joblib"
-    lstm_weights_path = "artifacts/model/lstm.pt"
+    # Load checkpoint from new LSTM artifacts
+    lstm_meta_path = "artifacts/lstm/lstm.joblib"
+    lstm_weights_path = "artifacts/lstm/lstm.pt"
     
-    if not (os.path.exists(stack_path) and os.path.exists(lstm_weights_path)):
-        print("⚠️ Stacking model artifacts not found. Skipping model prediction case study visualization.")
+    if not (os.path.exists(lstm_meta_path) and os.path.exists(lstm_weights_path)):
+        print("⚠️ LSTM-Q model artifacts not found. Skipping model prediction case study visualization.")
         return
         
-    print("  -> Loading LSTM-Q model and scaler from stacking artifacts...")
+    print("  -> Loading LSTM-Q model and scaler from LSTM artifacts...")
     import joblib
-    art = joblib.load(stack_path)
+    art = joblib.load(lstm_meta_path)
     features = art["features"]
     scaler = art["standardizer"]
     cfg = art["cfg"]
@@ -429,8 +570,9 @@ def main():
     try:
         generate_bronze_eda(output_dir)
         generate_gold_eda(output_dir)
+        generate_feature_importance(output_dir)
         generate_forecast_case_study(output_dir)
-        print("✅ Success! All 7 presentation assets are ready and saved in 'docs/eda_plots/'.")
+        print("✅ Success! All 8 presentation assets are ready and saved in 'docs/eda_plots/'.")
     except Exception as e:
         print(f"❌ Error during visualization generation: {str(e)}")
         sys.exit(1)

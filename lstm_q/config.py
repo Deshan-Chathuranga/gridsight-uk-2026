@@ -1,11 +1,10 @@
-"""Central configuration for the probabilistic solar-forecasting stack.
+"""Central configuration for the standalone LSTM-Q model.
 
-Stack = TCN-Q + LGBM-Q base learners -> Linear-Q meta-learner, all quantile
-(q10/q50/q90). Everything reads the LOCAL Gold feature store (no network).
+Everything reads the LOCAL Gold feature store (no network).
 """
 from __future__ import annotations
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -28,7 +27,7 @@ NON_FEATURE_COLS = {
 class ModelConfig:
     # ---- data ----
     gold_dir: Path = _DATA_DIR / "gold" / "gold_features"
-    artifacts_dir: Path = Path("artifacts/model")
+    artifacts_dir: Path = Path("artifacts/lstm")
     target: str = "target_cf"          # predict capacity factor, convert to MW with capacity_mwp
     quantiles: tuple[float, ...] = QUANTILES
     horizon_steps: int = 48            # must match the Gold build horizon
@@ -41,38 +40,21 @@ class ModelConfig:
     daylight_only: bool = True         # train/score only sun-up slots; night is predicted 0
     seed: int = 42
 
-    # ---- TCN-Q (sequence model, 63h diurnal context) ----
+    # ---- LSTM-Q (sequence model) ----
     seq_len: int = 126                 # 63h * 2 (half-hourly)
-    tcn_channels: tuple[int, ...] = (64, 64, 64, 64, 64, 64)
-    tcn_kernel: int = 3
-    tcn_dropout: float = 0.1
-    tcn_lr: float = 1e-3
-    tcn_epochs: int = 30
-    tcn_batch: int = 256
-    torch_threads: int = 1             # CPU thread cap. 1 avoids OpenMP oversubscription
-                                       # (torch vs LightGBM's libomp) that stalls CPU training.
-                                       # Ignored on GPU (Colab) — raise it on a clean CPU box.
-
-    # ---- LGBM-Q (tabular / clear-sky model) ----
-    lgbm_params: dict = field(default_factory=lambda: {
-        "n_estimators": 800,
-        "learning_rate": 0.03,
-        "num_leaves": 63,
-        "min_child_samples": 100,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "reg_lambda": 1.0,
-        "n_jobs": -1,
-        "verbose": -1,
-    })
-
-    # ---- stacking ----
-    n_folds: int = 5                   # out-of-fold CV for the meta-learner
+    lstm_hidden: int = 128
+    lstm_layers: int = 2
+    lstm_dropout: float = 0.20
+    lstm_lr: float = 3e-4
+    lstm_epochs: int = 30
+    lstm_batch: int = 256
+    lstm_weight_decay: float = 1e-4
+    torch_threads: int = 1             # CPU thread cap.
 
     def __post_init__(self):
         # Dynamically separate artifact directories by horizon steps if not default (48)
         if self.horizon_steps != 48:
-            self.artifacts_dir = Path(f"artifacts/model_h{self.horizon_steps}")
+            self.artifacts_dir = Path(f"artifacts/lstm_h{self.horizon_steps}")
 
     def quantile_names(self) -> list[str]:
         return [f"q{int(q*100)}" for q in self.quantiles]

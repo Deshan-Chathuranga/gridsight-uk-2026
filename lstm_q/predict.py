@@ -1,6 +1,6 @@
 """Inference for Standalone LSTM-Q model.
 
-    from modeling.predict_lstm import predict_lstm_gold
+    from lstm_q.predict import predict_lstm_gold
     import pandas as pd, glob
     gold = pd.concat([pd.read_parquet(f) for f in
                       glob.glob("data/gold/gold_features/**/*.parquet", recursive=True)])

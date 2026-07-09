@@ -17,7 +17,7 @@ from loguru import logger
 from .config import ModelConfig
 from .data import prepare, make_sequences, Standardizer
 from .base import LSTMQuantile
-from .train_lstm import _lstm_fit_with_early_stopping
+from .train import _lstm_fit_with_early_stopping
 
 # Search Space definitions
 SEARCH_SPACE = {

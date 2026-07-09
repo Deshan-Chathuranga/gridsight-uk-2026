@@ -233,10 +233,7 @@ def run_lstm_pipeline(cfg: ModelConfig) -> dict:
 
 
 def _save_lstm_predictions(cfg, name, ts, y_true, preds, cap, base):
-    if cfg.horizon_steps != 48:
-        out_dir = Path(cfg.artifacts_dir).parent / f"lstm_h{cfg.horizon_steps}"
-    else:
-        out_dir = Path(cfg.artifacts_dir).parent / "lstm"
+    out_dir = Path(cfg.artifacts_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out = pd.DataFrame({"timestamp_utc": ts, "y_true": y_true})
     for q in cfg.quantiles:
@@ -250,10 +247,7 @@ def _save_lstm_predictions(cfg, name, ts, y_true, preds, cap, base):
 
 
 def _save_lstm_artifacts(cfg, lstm, std, feat_cols, calib_factor, results):
-    if cfg.horizon_steps != 48:
-        out_dir = Path(cfg.artifacts_dir).parent / f"lstm_h{cfg.horizon_steps}"
-    else:
-        out_dir = Path(cfg.artifacts_dir).parent / "lstm"
+    out_dir = Path(cfg.artifacts_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         import joblib, torch

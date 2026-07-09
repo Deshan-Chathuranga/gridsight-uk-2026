@@ -220,14 +220,22 @@ The full pipeline from raw data to trained model runs in **5 stages**:
 ./venv/bin/python -m data_ingestion.gold --horizon-steps 96   # 48-hour ahead
 
 # ──────────────────────────────────────────────────
-# STAGE 4: Train Stacking Model (TCN-Q + LGBM-Q + LSTM-Q -> Linear-Q)
+# STAGE 4: Train Models (Model A Stacking & Model B Standalone LSTM)
 # ──────────────────────────────────────────────────
+# Train Model A (Stacking: TCN-Q + LGBM-Q -> Linear-Q)
 ./venv/bin/python -m modeling --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+
+# Train Model B (Standalone LSTM-Q)
+./venv/bin/python -m lstm_q.train --horizon-steps 48 --gold-dir data/gold/gold_features_h48
 
 # ──────────────────────────────────────────────────
 # STAGE 5: Verify outputs
 # ──────────────────────────────────────────────────
+# Model A artifacts
 ls -la artifacts/model/
+
+# Model B artifacts
+ls -la artifacts/lstm/
 ```
 
 ### Skip Rebuilding — Pull Pre-built Data Directly
@@ -508,10 +516,10 @@ The forecasting system is a **Quantile Forecasting Stacking Stack** combining se
 **Step 3 — Train the Standalone LSTM-Q Model (Model B)**:
 ```bash
 # Full training (LSTM model with early stopping & calibration):
-./venv/bin/python -m modeling.train_lstm --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+./venv/bin/python -m lstm_q.train --horizon-steps 48 --gold-dir data/gold/gold_features_h48
 
 # Fast smoke run (for quick validation and CPU testing):
-./venv/bin/python -m modeling.train_lstm --fast
+./venv/bin/python -m lstm_q.train --fast
 ```
 
 #### CLI Parameters
@@ -531,15 +539,25 @@ The forecasting system is a **Quantile Forecasting Stacking Stack** combining se
 
 ### 6.3 Model Artifacts & Outputs
 
-All outputs are saved to the `artifacts/model/` directory:
+All outputs are saved to separate directories under the `artifacts/` folder:
+
+#### Model A (Stacking) Outputs (`artifacts/model/`)
 
 | File | Description |
 |---|---|
 | `stack.joblib` | Contains LightGBM estimators, Standardizer, Feature Names, and the Stack Meta-learner |
 | `tcn.pt` | PyTorch State Dictionary for the TCN-Q base learner |
-| `lstm.pt` | PyTorch State Dictionary for the LSTM-Q base learner |
-| `metrics.json` | Detailed validation and test split performance metrics |
+| `metrics.json` | Detailed validation and test split performance metrics for Model A |
 | `pred_val.parquet` / `pred_test.parquet` | True actuals and stacked quantile predictions |
+
+#### Model B (Standalone LSTM-Q) Outputs (`artifacts/lstm/`)
+
+| File | Description |
+|---|---|
+| `lstm.joblib` | Contains standardizer, model features list, config, and calibration factor |
+| `lstm.pt` | PyTorch State Dictionary for the LSTM-Q network |
+| `metrics.json` | Detailed validation and test split performance metrics for Model B |
+| `pred_val.parquet` / `pred_test.parquet` | True actuals and calibrated LSTM quantile predictions |
 
 ---
 
