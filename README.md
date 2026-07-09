@@ -16,10 +16,10 @@
    - [Bronze — Raw Downloads](#51-bronze--raw-downloads)
    - [Silver — Clean & Align](#52-silver--clean--align)
    - [Gold — Feature Store](#53-gold--feature-store)
-6. [LSTM-Q Model Training](#6-lstm-q-model-training)
-   - [Architecture Overview](#61-architecture-overview)
+6. [Model Training & Evaluation](#6-model-training--evaluation)
+   - [Stacking Architecture Overview](#61-stacking-architecture-overview)
    - [Training Commands (All Horizons)](#62-training-commands-all-horizons)
-   - [Model Artefacts & Outputs](#63-model-artefacts--outputs)
+   - [Model Artifacts & Outputs](#63-model-artifacts--outputs)
    - [Key Performance Indicators (KPIs)](#64-key-performance-indicators-kpis)
 7. [Gold Feature Reference](#7-gold-feature-reference)
 8. [Team HuggingFace Repositories](#8-team-huggingface-repositories)
@@ -30,18 +30,19 @@
 
 ## 1. Project Overview
 
-GridSight UK is a probabilistic solar power generation forecasting system for the UK National Grid. It produces **calibrated 80% prediction intervals** (q10 / q50 / q90) across four forecast horizons:
+GridSight UK is a probabilistic solar power generation forecasting system for the UK National Grid. It produces **calibrated 80% prediction intervals** (q10 / q50 / q90) across three forecast horizons:
 
 | Horizon | Steps (30-min) | Use Case |
 |---|---|---|
-| **1-hour ahead** | 2 steps | Near-real-time balancing |
 | **6-hour ahead** | 12 steps | Intra-day trading |
+| **12-hour ahead** | 24 steps | Daily portfolio adjustments |
 | **24-hour ahead** | 48 steps | Day-ahead market **(primary target)** |
-| **48-hour ahead** | 96 steps | Forward planning |
 
-### Model
+### Models
 
-The current production model is **LSTM-Q** — a 2-layer Long Short-Term Memory network trained with Pinball (Quantile) Loss. It outperforms the official UK National Energy System Operator (NESO) baseline across all horizons, achieving a **32% error reduction** on the primary day-ahead forecast.
+We implement two distinct model architectures:
+* **Model A (Primary Stacking Model)**: TCN-Q (Temporal Convolutional Network) + LGBM-Q (LightGBM Quantile Regressors) ➔ Linear-Q meta-learner. It combines sequential convolutional deep learning and tabular gradient boosting with physical clear-sky guidance.
+* **Model B (Standalone LSTM-Q Model)**: A standalone 2-layer Long Short-Term Memory network trained with Pinball (Quantile) Loss and calibrated post-hoc to guarantee exactly 80% coverage.
 
 ### KPI Success Gates
 
@@ -91,17 +92,28 @@ gridsight-uk-2026/
 │   │
 │   └── sync_bronze.py                 # Pull team Bronze from HF → local data/bronze/
 │
-├── modeling/                          # Probabilistic Forecasting Stacking Stack
-│   ├── base/                          # Base learners (TCN-Q, LGBM-Q, LSTM-Q)
+├── modeling/                          # Probabilistic Stacking Model (Model A)
+│   ├── base/                          # Base learners (TCN-Q, LGBM-Q)
 │   │   ├── lgbm_q.py                  # LightGBM Quantile Regressors
-│   │   ├── tcn_q.py                   # Temporal Convolutional Network
-│   │   └── lstm_q.py                  # Long Short-Term Memory
-│   ├── config.py                      # Configs & hyperparameters
+│   │   └── tcn_q.py                   # Temporal Convolutional Network
+│   ├── config.py                      # Configs & hyperparameters (LGBM/TCN)
 │   ├── data.py                        # Sequence and dataset preparation
 │   ├── train.py                       # OOF training & refit pipeline
 │   ├── predict.py                     # Stacking out-of-sample inference
 │   ├── stacking.py                    # Linear Quantile meta-learner
 │   └── evaluate.py                    # Plotting & evaluation report
+│
+├── lstm_q/                            # Standalone LSTM-Q forecasting package (Model B)
+│   ├── base/                          # Base PyTorch LSTM model wrapper
+│   │   └── lstm_q.py                  # LSTM model architecture and loss
+│   ├── config.py                      # LSTM hyperparameter configuration
+│   ├── data.py                        # Data prep and sequence generation
+│   ├── clearsky.py                    # Clear-sky GHI helper function
+│   ├── metrics.py                     # Pinball loss and coverage metrics
+│   ├── train.py                       # Training pipeline with calibration
+│   ├── predict.py                     # Standalone inference helper
+│   ├── evaluate.py                    # Evaluation plots and card generator
+│   └── README.md                      # Detailed package documentation
 │
 ├── src/                               # Shared utilities
 │   └── gridsight/
@@ -112,15 +124,20 @@ gridsight-uk-2026/
 │   ├── silver/                        # Cleaned, UTC-aligned parquet files
 │   └── gold/                          # Feature tables per horizon
 │       ├── gold_features/             # Default (24h ahead)
-│       ├── gold_features_h2/          # 1-hour ahead
 │       ├── gold_features_h12/         # 6-hour ahead
-│       ├── gold_features_h48/         # 24-hour ahead
-│       └── gold_features_h96/         # 48-hour ahead
+│       ├── gold_features_h24/         # 12-hour ahead
+│       └── gold_features_h48/         # 24-hour ahead
 │
-├── artifacts/                         # Stacking model output artifacts (git-ignored)
-│   └── model/
-│       ├── stack.joblib               # LightGBM + Meta Stacker models
-│       ├── tcn.pt                     # TCN-Q model weights
+├── artifacts/                         # Model output artifacts (git-ignored)
+│   ├── model/                         # Model A (Stacking) outputs
+│   │   ├── stack.joblib               # LightGBM + Meta Stacker models
+│   │   ├── tcn.pt                     # TCN-Q model weights
+│   │   ├── metrics.json               # Evaluation metrics
+│   │   ├── pred_val.parquet           # Validation predictions
+│   │   └── pred_test.parquet          # Test predictions
+│   │
+│   └── lstm/                          # Model B (Standalone LSTM-Q) outputs
+│       ├── lstm.joblib                # Standardizer + features + config
 │       ├── lstm.pt                    # LSTM-Q model weights
 │       ├── metrics.json               # Evaluation metrics
 │       ├── pred_val.parquet           # Validation predictions
@@ -214,10 +231,9 @@ The full pipeline from raw data to trained model runs in **5 stages**:
 # ──────────────────────────────────────────────────
 # STAGE 3: Build Gold feature tables for all horizons
 # ──────────────────────────────────────────────────
-./venv/bin/python -m data_ingestion.gold --horizon-steps 2    # 1-hour ahead
 ./venv/bin/python -m data_ingestion.gold --horizon-steps 12   # 6-hour ahead
+./venv/bin/python -m data_ingestion.gold --horizon-steps 24   # 12-hour ahead
 ./venv/bin/python -m data_ingestion.gold --horizon-steps 48   # 24-hour ahead (default)
-./venv/bin/python -m data_ingestion.gold --horizon-steps 96   # 48-hour ahead
 
 # ──────────────────────────────────────────────────
 # STAGE 4: Train Models (Model A Stacking & Model B Standalone LSTM)
@@ -411,13 +427,12 @@ data/silver/
 
 Gold reads local Silver and produces the final model-ready feature table. The entire build is parameterised by `horizon` (number of 30-min steps ahead). All lag features are forced to be ≥ horizon to prevent data leakage.
 
-#### Build for all four horizons
+#### Build for all three horizons
 
 ```bash
-./venv/bin/python -m data_ingestion.gold --horizon-steps 2    # 1-hour ahead
 ./venv/bin/python -m data_ingestion.gold --horizon-steps 12   # 6-hour ahead
+./venv/bin/python -m data_ingestion.gold --horizon-steps 24   # 12-hour ahead
 ./venv/bin/python -m data_ingestion.gold --horizon-steps 48   # 24-hour ahead (default)
-./venv/bin/python -m data_ingestion.gold --horizon-steps 96   # 48-hour ahead
 ```
 
 #### Build default day-ahead only
@@ -464,15 +479,14 @@ write_gold()           ← data/gold/gold_features_h{horizon}/year=YYYY/month=MM
 ```
 data/gold/
 ├── gold_features/             # Default (backward-compat, horizon=48)
-├── gold_features_h2/          # 1-hour ahead features
 ├── gold_features_h12/         # 6-hour ahead features
-├── gold_features_h48/         # 24-hour ahead features
-└── gold_features_h96/         # 48-hour ahead features
+├── gold_features_h24/         # 12-hour ahead features
+└── gold_features_h48/         # 24-hour ahead features
 ```
 
 ---
 
-## 6. Stacking Model Training
+## 6. Model Training & Evaluation
 
 ### 6.1 Stacking Architecture Overview
 
@@ -481,7 +495,6 @@ The forecasting system is a **Quantile Forecasting Stacking Stack** combining se
 | Component | Type | Details |
 |---|---|---|
 | **TCN-Q** | Dilated Causal CNN | Temporal Convolutional Network capturing sequence context (63h history) |
-| **LSTM-Q** | Recurrent Neural Network | 2-layer LSTM capturing recurrent temporal context |
 | **LGBM-Q** | Gradient Boosting | Tabular LightGBM model trained on meteorological & temporal features |
 | **Clear-Sky GHI** | Physics Feature | Solar geometry (elevation angle, cosine clearsky index) |
 | **Meta-Learner** | Stacking Regressor | Linear Quantile Regressor combining base predictions out-of-fold |
