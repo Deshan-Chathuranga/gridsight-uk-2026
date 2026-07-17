@@ -40,9 +40,10 @@ GridSight UK is a probabilistic solar power generation forecasting system for th
 
 ### Models
 
-We implement two distinct model architectures:
+We implement three distinct model architectures:
 * **Model A (Primary Stacking Model)**: TCN-Q (Temporal Convolutional Network) + LGBM-Q (LightGBM Quantile Regressors) ➔ Linear-Q meta-learner. It combines sequential convolutional deep learning and tabular gradient boosting with physical clear-sky guidance.
 * **Model B (Standalone LSTM-Q Model)**: A standalone 2-layer Long Short-Term Memory network trained with Pinball (Quantile) Loss and calibrated post-hoc to guarantee exactly 80% coverage.
+* **Model C (Pretrained Chronos-Q Model)**: A **zero-shot** forecaster built on Amazon's [Chronos](https://github.com/amazon-science/chronos-forecasting) pretrained time-series foundation model. It trains nothing — it loads a pretrained checkpoint from HuggingFace, forecasts the target series univariately, and reuses the same post-hoc calibration to hit the 80% PICP gate. Serves as a feature-free benchmark and ensembling leg.
 
 ### KPI Success Gates
 
@@ -115,6 +116,17 @@ gridsight-uk-2026/
 │   ├── evaluate.py                    # Evaluation plots and card generator
 │   └── README.md                      # Detailed package documentation
 │
+├── chronos_q/                         # Pretrained Chronos-Q foundation model (Model C)
+│   ├── base/                          # Chronos pipeline wrapper (zero-shot)
+│   │   └── chronos_q.py               # Loads HF checkpoint, H-ahead quantile forecast
+│   ├── config.py                      # Chronos checkpoint & inference configuration
+│   ├── data.py                        # Gold loading + chronological split masks
+│   ├── metrics.py                     # Pinball loss and coverage metrics
+│   ├── forecast.py                    # Zero-shot pipeline + calibration + evaluation
+│   ├── predict.py                     # Standalone inference helper
+│   ├── evaluate.py                    # Evaluation plots and card generator
+│   └── README.md                      # Detailed package documentation
+│
 ├── src/                               # Shared utilities
 │   └── gridsight/
 │       └── config.py                  # Project-wide configuration
@@ -136,9 +148,15 @@ gridsight-uk-2026/
 │   │   ├── pred_val.parquet           # Validation predictions
 │   │   └── pred_test.parquet          # Test predictions
 │   │
-│   └── lstm/                          # Model B (Standalone LSTM-Q) outputs
-│       ├── lstm.joblib                # Standardizer + features + config
-│       ├── lstm.pt                    # LSTM-Q model weights
+│   ├── lstm/                          # Model B (Standalone LSTM-Q) outputs
+│   │   ├── lstm.joblib                # Standardizer + features + config
+│   │   ├── lstm.pt                    # LSTM-Q model weights
+│   │   ├── metrics.json               # Evaluation metrics
+│   │   ├── pred_val.parquet           # Validation predictions
+│   │   └── pred_test.parquet          # Test predictions
+│   │
+│   └── chronos/                       # Model C (Pretrained Chronos-Q) outputs
+│       ├── chronos.joblib             # Config + calibration factor + checkpoint name
 │       ├── metrics.json               # Evaluation metrics
 │       ├── pred_val.parquet           # Validation predictions
 │       └── pred_test.parquet          # Test predictions
@@ -244,6 +262,9 @@ The full pipeline from raw data to trained model runs in **5 stages**:
 # Train Model B (Standalone LSTM-Q)
 ./venv/bin/python -m lstm_q.train --horizon-steps 48 --gold-dir data/gold/gold_features_h48
 
+# Run Model C (Pretrained Chronos-Q, zero-shot — no training)
+./venv/bin/python -m chronos_q --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+
 # ──────────────────────────────────────────────────
 # STAGE 5: Verify outputs
 # ──────────────────────────────────────────────────
@@ -252,6 +273,9 @@ ls -la artifacts/model/
 
 # Model B artifacts
 ls -la artifacts/lstm/
+
+# Model C artifacts
+ls -la artifacts/chronos/
 ```
 
 ### Skip Rebuilding — Pull Pre-built Data Directly
@@ -534,6 +558,19 @@ The forecasting system is a **Quantile Forecasting Stacking Stack** combining se
 # Fast smoke run (for quick validation and CPU testing):
 ./venv/bin/python -m lstm_q.train --fast
 ```
+
+**Step 4 — Run the Pretrained Chronos-Q Model (Model C, zero-shot)**:
+```bash
+# Zero-shot forecast + post-hoc calibration + evaluation (no gradient training):
+./venv/bin/python -m chronos_q --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+
+# Pick a different checkpoint (tiny/mini/small/base):
+./venv/bin/python -m chronos_q --model-name amazon/chronos-bolt-base --horizon-steps 48
+
+# Fast smoke run (tiny checkpoint, short context, strided origins):
+./venv/bin/python -m chronos_q --fast
+```
+See [`chronos_q/README.md`](chronos_q/README.md) for the full parameter reference and forecast framing.
 
 #### CLI Parameters
 
