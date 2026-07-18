@@ -60,108 +60,46 @@ We implement three distinct model architectures:
 ```
 gridsight-uk-2026/
 │
-├── data_ingestion/                    # Data pipeline (Bronze → Silver → Gold)
-│   ├── bronze/                        # Raw data ingestion (download only)
-│   │   ├── cli.py                     # CLI: python -m data_ingestion.bronze
-│   │   ├── common.py                  # Shared config, path helpers
-│   │   ├── neso.py                    # NESO CKAN API → parquet
-│   │   ├── pv_live.py                 # Sheffield PV_Live API → parquet
-│   │   ├── ocf_pv.py                  # OCF UK PV (HuggingFace) → parquet
-│   │   ├── met_office.py              # Met Office NWP zarr → point-extract parquet
-│   │   └── upload.py                  # Push local Bronze to HF repo
+├── apps/                              # Applications & User Interfaces
+│   ├── frontend/                      # React Vite Frontend (TypeScript SPA)
+│   ├── backend/                       # FastAPI Application Server (APScheduler, API routes)
+│   └── streamlit_dashboard.py         # Streamlit Offline Diagnostics Dashboard
+│
+├── src/gridsight/                     # Core Python Library Package (pip-installable)
+│   ├── __init__.py                    # Dynamic package compatibility aliases (modeling/lstm_q)
+│   ├── config.py                      # Global settings & paths config (Pydantic)
 │   │
-│   ├── silver/                        # Cleaning, alignment, quality checks
-│   │   ├── cli.py                     # CLI: python -m data_ingestion.silver
-│   │   ├── common.py                  # Shared UTC helpers, IO, missing-data policy
-│   │   ├── contracts.py               # Data-quality assertions (hard-fail)
-│   │   ├── pv_live.py                 # → silver_pv_live (the model target)
-│   │   ├── met_office.py              # → silver_met_office_nwp
-│   │   ├── ocf_pv.py                  # → silver_ocf_pv
-│   │   ├── neso.py                    # → silver_neso
-│   │   └── upload.py                  # Push local Silver to HF repo
+│   ├── data/                          # Unified Data Ingestion (Bronze → Silver → Gold)
+│   │   ├── __init__.py
+│   │   ├── bronze/                    # Raw API downloads (NESO, MetOffice, PVLive, OCF)
+│   │   ├── silver/                    # Cleaning, UTC-alignment, and validation contracts
+│   │   ├── gold/                      # Feature engineering & anti-leakage checks
+│   │   └── sync_bronze.py             # Pull raw team data from HuggingFace
 │   │
-│   ├── gold/                          # Feature engineering (model-ready table)
-│   │   ├── build.py                   # Orchestrator: merge → targets → features → validate
-│   │   ├── cli.py                     # CLI: python -m data_ingestion.gold
-│   │   ├── merge.py                   # LEFT JOIN 4 Silver tables on timestamp_utc
-│   │   ├── targets.py                 # target_mw, target_cf
-│   │   ├── calendar_features.py       # Calendar + NOAA solar geometry
-│   │   ├── lag_features.py            # Leakage-safe lags & rolling stats
-│   │   ├── contracts.py               # Anti-leakage hard checks
-│   │   ├── common.py                  # Shared config, read/write gold
-│   │   └── upload.py                  # Push local Gold to HF repo
-│   │
-│   └── sync_bronze.py                 # Pull team Bronze from HF → local data/bronze/
+│   └── models/                        # Forecasting Architectures
+│       ├── __init__.py
+│       ├── common/                    # Consolidated shared modules (metrics, clearsky)
+│       │   ├── __init__.py
+│       │   ├── metrics.py             # Unified Pinball loss & coverage metrics
+│       │   └── clearsky.py            # Physical GHI Prior indexer
+│       │
+│       ├── stacking/                  # Model A (dilated TCN-Q + LightGBM-Q -> Linear Stacker)
+│       ├── lstm/                      # Model B (Standalone PyTorch LSTM-Q)
+│       └── chronos/                   # Model C (Zero-shot Chronos-Q foundation model)
 │
-├── modeling/                          # Probabilistic Stacking Model (Model A)
-│   ├── base/                          # Base learners (TCN-Q, LGBM-Q)
-│   │   ├── lgbm_q.py                  # LightGBM Quantile Regressors
-│   │   └── tcn_q.py                   # Temporal Convolutional Network
-│   ├── config.py                      # Configs & hyperparameters (LGBM/TCN)
-│   ├── data.py                        # Sequence and dataset preparation
-│   ├── train.py                       # OOF training & refit pipeline
-│   ├── predict.py                     # Stacking out-of-sample inference
-│   ├── stacking.py                    # Linear Quantile meta-learner
-│   └── evaluate.py                    # Plotting & evaluation report
+├── tests/                             # Unified Test Suite (mirrors package structure)
+│   ├── data/                          # Data pipeline contract validation tests
+│   ├── models/                        # Model metric and component tests
+│   └── integration/                   # API endpoint tests
 │
-├── lstm_q/                            # Standalone LSTM-Q forecasting package (Model B)
-│   ├── base/                          # Base PyTorch LSTM model wrapper
-│   │   └── lstm_q.py                  # LSTM model architecture and loss
-│   ├── config.py                      # LSTM hyperparameter configuration
-│   ├── data.py                        # Data prep and sequence generation
-│   ├── clearsky.py                    # Clear-sky GHI helper function
-│   ├── metrics.py                     # Pinball loss and coverage metrics
-│   ├── train.py                       # Training pipeline with calibration
-│   ├── predict.py                     # Standalone inference helper
-│   ├── evaluate.py                    # Evaluation plots and card generator
-│   └── README.md                      # Detailed package documentation
+├── data/                              # Local raw & processed data cache (git-ignored)
+├── artifacts/                         # Model checkpoints, metrics, and fan plots (git-ignored)
+├── checkpoints/                       # Scratch model checkpoints directory
+├── notebooks/                         # Jupyter Notebooks for training & analysis
+│   └── gridsight_train_colab.ipynb    # Training notebook for Google Colab
 │
-├── chronos_q/                         # Pretrained Chronos-Q foundation model (Model C)
-│   ├── base/                          # Chronos pipeline wrapper (zero-shot)
-│   │   └── chronos_q.py               # Loads HF checkpoint, H-ahead quantile forecast
-│   ├── config.py                      # Chronos checkpoint & inference configuration
-│   ├── data.py                        # Gold loading + chronological split masks
-│   ├── metrics.py                     # Pinball loss and coverage metrics
-│   ├── forecast.py                    # Zero-shot pipeline + calibration + evaluation
-│   ├── predict.py                     # Standalone inference helper
-│   ├── evaluate.py                    # Evaluation plots and card generator
-│   └── README.md                      # Detailed package documentation
-│
-├── src/                               # Shared utilities
-│   └── gridsight/
-│       └── config.py                  # Project-wide configuration
-│
-├── data/                              # Local data (git-ignored)
-│   ├── bronze/                        # Raw downloaded parquet files
-│   ├── silver/                        # Cleaned, UTC-aligned parquet files
-│   └── gold/                          # Feature tables per horizon
-│       ├── gold_features/             # Default (24h ahead)
-│       ├── gold_features_h12/         # 6-hour ahead
-│       ├── gold_features_h24/         # 12-hour ahead
-│       └── gold_features_h48/         # 24-hour ahead
-│
-├── artifacts/                         # Model output artifacts (git-ignored)
-│   ├── model/                         # Model A (Stacking) outputs
-│   │   ├── stack.joblib               # LightGBM + Meta Stacker models
-│   │   ├── tcn.pt                     # TCN-Q model weights
-│   │   ├── metrics.json               # Evaluation metrics
-│   │   ├── pred_val.parquet           # Validation predictions
-│   │   └── pred_test.parquet          # Test predictions
-│   │
-│   ├── lstm/                          # Model B (Standalone LSTM-Q) outputs
-│   │   ├── lstm.joblib                # Standardizer + features + config
-│   │   ├── lstm.pt                    # LSTM-Q model weights
-│   │   ├── metrics.json               # Evaluation metrics
-│   │   ├── pred_val.parquet           # Validation predictions
-│   │   └── pred_test.parquet          # Test predictions
-│   │
-│   └── chronos/                       # Model C (Pretrained Chronos-Q) outputs
-│       ├── chronos.joblib             # Config + calibration factor + checkpoint name
-│       ├── metrics.json               # Evaluation metrics
-│       ├── pred_val.parquet           # Validation predictions
-│       └── pred_test.parquet          # Test predictions
-│
-├── configs/
+├── configs/                           # Shared regional points & hyperparameters
+│   ├── best_lstm_params.json          # Optimised hyperparameters for LSTM-Q
 │   └── uk_weather_points.csv          # 7 UK regional NWP extraction points
 │
 ├── Documents/                         # Project planning documents
@@ -224,9 +162,9 @@ Generate a token at [huggingface.co/settings/tokens](https://huggingface.co/sett
 ### 3.5 Verify Installation
 
 ```bash
-./venv/bin/python -m data_ingestion.sync_bronze --help
-./venv/bin/python -m data_ingestion.silver --help
-./venv/bin/python -m data_ingestion.gold --help
+./venv/bin/python -m gridsight.data.sync_bronze --help
+./venv/bin/python -m gridsight.data.silver --help
+./venv/bin/python -m gridsight.data.gold --help
 ```
 
 ---
@@ -239,31 +177,31 @@ The full pipeline from raw data to trained model runs in **5 stages**:
 # ──────────────────────────────────────────────────
 # STAGE 1: Pull raw Bronze data from HuggingFace
 # ──────────────────────────────────────────────────
-./venv/bin/python -m data_ingestion.sync_bronze --source all
+./venv/bin/python -m gridsight.data.sync_bronze --source all
 
 # ──────────────────────────────────────────────────
 # STAGE 2: Build Silver from local Bronze (no network)
 # ──────────────────────────────────────────────────
-./venv/bin/python -m data_ingestion.silver --source all
+./venv/bin/python -m gridsight.data.silver --source all
 
 # ──────────────────────────────────────────────────
 # STAGE 3: Build Gold feature tables for all horizons
 # ──────────────────────────────────────────────────
-./venv/bin/python -m data_ingestion.gold --horizon-steps 12   # 6-hour ahead
-./venv/bin/python -m data_ingestion.gold --horizon-steps 24   # 12-hour ahead
-./venv/bin/python -m data_ingestion.gold --horizon-steps 48   # 24-hour ahead (default)
+./venv/bin/python -m gridsight.data.gold --horizon-steps 12   # 6-hour ahead
+./venv/bin/python -m gridsight.data.gold --horizon-steps 24   # 12-hour ahead
+./venv/bin/python -m gridsight.data.gold --horizon-steps 48   # 24-hour ahead (default)
 
 # ──────────────────────────────────────────────────
 # STAGE 4: Train Models (Model A Stacking & Model B Standalone LSTM)
 # ──────────────────────────────────────────────────
 # Train Model A (Stacking: TCN-Q + LGBM-Q -> Linear-Q)
-./venv/bin/python -m modeling --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+./venv/bin/python -m gridsight.models.stacking --horizon-steps 48 --gold-dir data/gold/gold_features_h48
 
 # Train Model B (Standalone LSTM-Q)
-./venv/bin/python -m lstm_q.train --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+./venv/bin/python -m gridsight.models.lstm.train --horizon-steps 48 --gold-dir data/gold/gold_features_h48
 
 # Run Model C (Pretrained Chronos-Q, zero-shot — no training)
-./venv/bin/python -m chronos_q --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+./venv/bin/python -m gridsight.models.chronos --horizon-steps 48 --gold-dir data/gold/gold_features_h48
 
 # ──────────────────────────────────────────────────
 # STAGE 5: Verify outputs
@@ -406,22 +344,22 @@ Silver reads local Bronze and applies deterministic cleaning rules, then validat
 #### Build all Silver tables
 
 ```bash
-./venv/bin/python -m data_ingestion.silver --source all
+./venv/bin/python -m gridsight.data.silver --source all
 ```
 
 #### Build a single table
 
 ```bash
-./venv/bin/python -m data_ingestion.silver --source pv_live
-./venv/bin/python -m data_ingestion.silver --source met_office_nwp
-./venv/bin/python -m data_ingestion.silver --source ocf_pv
-./venv/bin/python -m data_ingestion.silver --source neso
+./venv/bin/python -m gridsight.data.silver --source pv_live
+./venv/bin/python -m gridsight.data.silver --source met_office_nwp
+./venv/bin/python -m gridsight.data.silver --source ocf_pv
+./venv/bin/python -m gridsight.data.silver --source neso
 ```
 
 #### Cross-source sanity checks
 
 ```bash
-./venv/bin/python -m data_ingestion.silver --source cross_check
+./venv/bin/python -m gridsight.data.silver --source cross_check
 ```
 
 Checks that the correlation between `pv_live.generation_mw` and `neso.embedded_solar_mw` is > 0.85.
@@ -454,21 +392,21 @@ Gold reads local Silver and produces the final model-ready feature table. The en
 #### Build for all three horizons
 
 ```bash
-./venv/bin/python -m data_ingestion.gold --horizon-steps 12   # 6-hour ahead
-./venv/bin/python -m data_ingestion.gold --horizon-steps 24   # 12-hour ahead
-./venv/bin/python -m data_ingestion.gold --horizon-steps 48   # 24-hour ahead (default)
+./venv/bin/python -m gridsight.data.gold --horizon-steps 12   # 6-hour ahead
+./venv/bin/python -m gridsight.data.gold --horizon-steps 24   # 12-hour ahead
+./venv/bin/python -m gridsight.data.gold --horizon-steps 48   # 24-hour ahead (default)
 ```
 
 #### Build default day-ahead only
 
 ```bash
-./venv/bin/python -m data_ingestion.gold
+./venv/bin/python -m gridsight.data.gold
 ```
 
 #### Build and push to team HF repo
 
 ```bash
-./venv/bin/python -m data_ingestion.gold --upload
+./venv/bin/python -m gridsight.data.gold --upload
 ```
 
 #### Build pipeline steps
@@ -538,39 +476,39 @@ The forecasting system is a **Quantile Forecasting Stacking Stack** combining se
 
 **Step 1 — Build Gold feature tables** (if not already built):
 ```bash
-./venv/bin/python -m data_ingestion.gold --horizon-steps 48
+./venv/bin/python -m gridsight.data.gold --horizon-steps 48
 ```
 
 **Step 2 — Train the Stacking Model (Model A: TCN-Q + LGBM-Q ➔ Linear-Q)**:
 ```bash
 # Full training (TCN and LGBM base models + Linear meta-stacker):
-./venv/bin/python -m modeling --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+./venv/bin/python -m gridsight.models.stacking --horizon-steps 48 --gold-dir data/gold/gold_features_h48
 
 # Fast smoke run (for quick validation and CPU testing):
-./venv/bin/python -m modeling --fast
+./venv/bin/python -m gridsight.models.stacking --fast
 ```
 
 **Step 3 — Train the Standalone LSTM-Q Model (Model B)**:
 ```bash
 # Full training (LSTM model with early stopping & calibration):
-./venv/bin/python -m lstm_q.train --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+./venv/bin/python -m gridsight.models.lstm.train --horizon-steps 48 --gold-dir data/gold/gold_features_h48
 
 # Fast smoke run (for quick validation and CPU testing):
-./venv/bin/python -m lstm_q.train --fast
+./venv/bin/python -m gridsight.models.lstm.train --fast
 ```
 
 **Step 4 — Run the Pretrained Chronos-Q Model (Model C, zero-shot)**:
 ```bash
 # Zero-shot forecast + post-hoc calibration + evaluation (no gradient training):
-./venv/bin/python -m chronos_q --horizon-steps 48 --gold-dir data/gold/gold_features_h48
+./venv/bin/python -m gridsight.models.chronos --horizon-steps 48 --gold-dir data/gold/gold_features_h48
 
 # Pick a different checkpoint (tiny/mini/small/base):
-./venv/bin/python -m chronos_q --model-name amazon/chronos-bolt-base --horizon-steps 48
+./venv/bin/python -m gridsight.models.chronos --model-name amazon/chronos-bolt-base --horizon-steps 48
 
 # Fast smoke run (tiny checkpoint, short context, strided origins):
-./venv/bin/python -m chronos_q --fast
+./venv/bin/python -m gridsight.models.chronos --fast
 ```
-See [`chronos_q/README.md`](chronos_q/README.md) for the full parameter reference and forecast framing.
+See [`src/gridsight/models/chronos/README.md`](src/gridsight/models/chronos/README.md) for the full parameter reference and forecast framing.
 
 #### CLI Parameters
 
@@ -708,10 +646,10 @@ For `horizon=48` (day-ahead), all lags are >= 48 steps (>= 24 hours ago).
 
 ```bash
 # All sources
-./venv/bin/python -m data_ingestion.sync_bronze --source all
+./venv/bin/python -m gridsight.data.sync_bronze --source all
 
 # Single source
-./venv/bin/python -m data_ingestion.sync_bronze --source met_office_nwp
+./venv/bin/python -m gridsight.data.sync_bronze --source met_office_nwp
 ```
 
 The sync is incremental and resumable — files already present locally are skipped.
@@ -747,8 +685,8 @@ All planning documents are in `Documents/Project Plan/`:
 
 | Issue | Solution |
 |---|---|
-| `ModuleNotFoundError: No module named 'data_ingestion'` | Run all commands from the project root directory |
-| `FileNotFoundError` on Gold data during training | Build the Gold table first: `./venv/bin/python -m data_ingestion.gold --horizon-steps {N}` |
+| `ModuleNotFoundError: No module named 'gridsight'` | Install package in editable mode: `pip install -e .` from root or run from the project root |
+| `FileNotFoundError` on Gold data during training | Build the Gold table first: `./venv/bin/python -m gridsight.data.gold --horizon-steps {N}` |
 | Training is slow on CPU | Install PyTorch with CUDA/MPS support; the script auto-detects accelerators |
 | PICP outside [0.78, 0.82] | The post-hoc calibration sweep runs automatically; check the calibration factor in the console output |
 

@@ -1,0 +1,14 @@
+venv/
+.venv/
+data/
+artifacts/model/pred_*.parquet
+artifacts/lstm/pred_*.parquet
+node_modules/
+.git/
+.idea/
+.vscode/
+*.pyc
+__pycache__/
+.pytest_cache/
+.coverage
+*.log

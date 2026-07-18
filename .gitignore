@@ -1,5 +1,6 @@
 .env
 env
+venv/
 data/
 test/
 
@@ -11,3 +12,9 @@ __pycache__/
 .pytest_cache/
 
 .DS_Store
+
+mlruns/
+mlflow.db
+*.zip
+.coverage
+*.log

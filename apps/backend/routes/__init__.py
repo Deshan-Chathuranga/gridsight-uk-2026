@@ -1,0 +1,1 @@
+# FastAPI subrouters packaging

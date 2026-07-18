@@ -49,6 +49,8 @@ Team repos:
 
 - Downloads from `gridsight-team/gridsight-bronze` (**team repo, not upstream**).
 - Incremental & resumable: files already present are skipped.
+- **Live NWP Ingestion (2026+)**: When ingesting `met_office_nwp` for 2026 or later, the pipeline automatically fetches live UKMO regional deterministic forecasts from Open-Meteo via `data_ingestion.bronze.fetch_met_office_live`.
+- **PV Live (Current Month)**: Partition for the current month is never skipped, enabling dynamic updates of live actuals.
 
 ---
 
@@ -67,12 +69,23 @@ reads **local Bronze only**, never HF.
 ## 3. Build Gold from local Silver (no network)
 
 ```bash
-./venv/bin/python -m data_ingestion.gold                    # day-ahead (horizon=48 steps = 24h)
-./venv/bin/python -m data_ingestion.gold --horizon-steps 6  # 3h-ahead (Just use this for test)
+# Day-ahead (horizon=48 steps = 24h, default)
+./venv/bin/python -m data_ingestion.gold --horizon-steps 48
+
+# 12-hour ahead (horizon=24 steps = 12h)
+./venv/bin/python -m data_ingestion.gold --horizon-steps 24
+
+# 6-hour ahead (horizon=12 steps = 6h)
+./venv/bin/python -m data_ingestion.gold --horizon-steps 12
 ```
 
-Writes the single feature table `data/gold/gold_features/year=/month=/`. Gold
+Writes the feature tables under `data/gold/gold_features_h{horizon}/`. Gold
 reads **local Silver only**.
+
+During the Gold build:
+- **Spine Extension**: The index spine is extended to cover the future forecast horizon from NWP forecasts. `capacity_mwp` is filled using forward/backward fill.
+- **Weather Imputation & Fallbacks**: Missing NWP slots are dynamically imputed using clear-sky physical models (e.g., `ssrd_uk = clearsky_cos * 900.0` and scaled `t2m_uk`).
+- **OCF Proxying**: Missing OCF observations (`ocf_total_mw`) are automatically proxied using scaled NESO actuals (`generation_mw * 0.004026`).
 
 **Full local rebuild in one go:**
 
@@ -134,6 +147,9 @@ Key column: `**timestamp_utc**` (tz-aware UTC, 30-min grid). 47 columns total.
 | `ws10_uk`   | 10 m wind speed (m/s)                                                          |
 | `nwp_age_h` | Forecast lead/age in hours (0–15; NWP source caps at 15 h)                     |
 
+> [!NOTE]
+> Weather slots that are missing are automatically imputed during the Gold build phase using clear-sky physical models (e.g. estimating shortwave radiation as a fraction of `clearsky_cos`).
+
 
 ### Operator baseline — NESO (forecast, known ahead)
 
@@ -168,14 +184,14 @@ Key column: `**timestamp_utc**` (tz-aware UTC, 30-min grid). 47 columns total.
 ### Lagged / rolling — OBSERVED actuals (leakage-safe, shifted ≥ horizon)
 
 
-| Column                                   | Meaning                                                     |
-| ---------------------------------------- | ----------------------------------------------------------- |
-| `gen_lag_{48,96,144,336}`                | Generation 1 / 2 / 3 / 7 days ago (MW)                      |
-| `cf_lag_{48,96,144,336}`                 | Capacity factor at the same lags                            |
-| `gen_roll_mean_48` / `gen_roll_mean_336` | Trailing 1-day / 1-week mean generation (ends at t−horizon) |
-| `gen_roll_std_48`                        | Trailing 1-day generation volatility                        |
-| `cf_roll_mean_48` / `cf_roll_mean_336`   | Trailing 1-day / 1-week mean capacity factor                |
-| `ocf_lag_48`, `ocf_roll_mean_48`         | OCF rooftop-fleet index, lagged / trailing mean (MW)        |
+| Column                                          | Meaning                                                     |
+| ----------------------------------------------- | ----------------------------------------------------------- |
+| `gen_lag_{48,96,144,336}`                       | Generation 1 / 2 / 3 / 7 days ago (MW)                      |
+| `cf_lag_{48,96,144,336}`                        | Capacity factor at the same lags                            |
+| `gen_roll_mean_48` / `gen_roll_mean_336`        | Trailing 1-day / 1-week mean generation (ends at t−horizon) |
+| `gen_roll_std_48`                               | Trailing 1-day generation volatility                        |
+| `cf_roll_mean_48` / `cf_roll_mean_336`          | Trailing 1-day / 1-week mean capacity factor                |
+| `ocf_lag_{48,96,144,336}`, `ocf_roll_mean_48`   | OCF rooftop-fleet index, lagged / trailing mean (MW)        |
 
 
 ### Quality / bookkeeping (not model inputs)
