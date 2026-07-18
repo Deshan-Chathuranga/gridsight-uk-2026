@@ -1,6 +1,6 @@
 venv/
 .venv/
-data/
+/data/
 node_modules/
 .git/
 .idea/
