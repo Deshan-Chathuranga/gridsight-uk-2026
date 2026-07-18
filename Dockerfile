@@ -27,6 +27,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend and other codebase folders
 COPY . .
 
+# Install the gridsight package in editable mode
+RUN pip install --no-cache-dir -e .
+
 # Copy the built frontend dist to the correct location
 COPY --from=frontend-builder /app/apps/frontend/dist /app/apps/frontend/dist
 
