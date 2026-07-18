@@ -1,0 +1,92 @@
+"""Orchestrate the Gold feature store: merge -> targets -> calendar/solar -> lags.
+"""
+from __future__ import annotations
+
+import pandas as pd
+from loguru import logger
+
+from .common import TS, write_gold, GOLD_TABLE
+from .merge import merge_silver
+from .targets import add_targets
+from .calendar_features import add_calendar, add_solar
+from .lag_features import add_lags_rolling
+from .contracts import validate_gold
+
+DEFAULT_HORIZON = 48  # 30-min steps = 24h (day-ahead)
+
+# column order: keys, targets, then feature groups
+_LEAD = [TS, "target_mw", "target_cf", "capacity_mwp"]
+
+# OBSERVED-at-t actuals: usable only via their lagged versions. The raw columns
+# would leak (you don't know them at forecast time), so drop after lagging.
+# generation_mw is the target source (== target_mw) and is dropped too.
+_LEAKY_OBSERVED = ["generation_mw", "ocf_total_mw", "ocf_mean_wh", "ocf_n_systems"]
+
+
+def impute_missing_weather(df: pd.DataFrame) -> pd.DataFrame:
+    """Impute missing weather features using dynamic physical clear-sky fallbacks."""
+    df = df.copy()
+    if "ssrd_uk" in df.columns:
+        is_missing = df["ssrd_uk"].isna()
+        if is_missing.any():
+            logger.warning(f"gold: Imputing {is_missing.sum()} missing weather slots with clear-sky fallbacks.")
+            df.loc[is_missing, "ssrd_uk"] = df.loc[is_missing, "clearsky_cos"] * 900.0
+            if "tcc_uk" in df.columns:
+                df.loc[is_missing, "tcc_uk"] = 0.2
+            if "lcc_uk" in df.columns:
+                df.loc[is_missing, "lcc_uk"] = 0.1
+            if "t2m_uk" in df.columns:
+                df.loc[is_missing, "t2m_uk"] = 288.0 + 6.0 * df.loc[is_missing, "clearsky_cos"]
+            if "ws10_uk" in df.columns:
+                df.loc[is_missing, "ws10_uk"] = 3.0
+            if "nwp_age_h" in df.columns:
+                df.loc[is_missing, "nwp_age_h"] = 0.0
+            if "nwp_flag" in df.columns:
+                df.loc[is_missing, "nwp_flag"] = "ok"
+    return df
+
+
+def build_gold(horizon: int = DEFAULT_HORIZON) -> pd.DataFrame:
+    df = merge_silver()
+    if df.empty:
+        return df
+    logger.info(f"gold: building features (horizon={horizon} steps = {horizon/2:.0f}h)")
+    df = add_targets(df)          # needs generation_mw, capacity_mwp
+    df = add_calendar(df)
+    df = add_solar(df)
+    df = impute_missing_weather(df)
+    df = add_lags_rolling(df, horizon)   # consumes generation_mw / ocf_total_mw
+
+    # drop raw observed actuals now that their leakage-safe lags exist
+    df = df.drop(columns=[c for c in _LEAKY_OBSERVED if c in df.columns])
+
+    # tidy column order
+    front = [c for c in _LEAD if c in df.columns]
+    rest = [c for c in df.columns if c not in front]
+    df = df[front + rest]
+    df.attrs["horizon"] = horizon
+    return df
+
+
+def run(horizon: int = DEFAULT_HORIZON, upload: bool = False, table: str | None = None) -> None:
+    df = build_gold(horizon)
+    if df.empty:
+        return
+    validate_gold(df, horizon)
+    
+    if table is None:
+        table = f"{GOLD_TABLE}_h{horizon}"
+        
+    write_gold(df, table)
+    
+    # For backward compatibility, also write to the standard "gold_features" if horizon is 48
+    if horizon == 48 and table != GOLD_TABLE:
+        write_gold(df, GOLD_TABLE)
+        
+    if upload:
+        from .upload import upload_gold_to_hf
+        upload_gold_to_hf()
+
+
+if __name__ == "__main__":
+    run()
