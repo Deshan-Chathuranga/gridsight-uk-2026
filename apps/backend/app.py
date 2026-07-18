@@ -137,6 +137,70 @@ def debug_import():
     return debug_info
 
 
+@app.get("/api/debug_xai")
+def debug_xai(horizon: int = 24):
+    import traceback
+    import joblib
+    
+    steps = {6: 12, 12: 24, 24: 48}[horizon]
+    folder = "model" if steps == 48 else f"model_h{steps}"
+    stack_path = ARTIFACTS_DIR / folder / "stack.joblib"
+    
+    info = {
+        "stack_path": str(stack_path),
+        "exists": stack_path.exists(),
+    }
+    
+    if not stack_path.exists():
+        return {"info": info, "status": "stack.joblib does not exist"}
+        
+    try:
+        art = joblib.load(stack_path)
+        info["keys"] = list(art.keys()) if isinstance(art, dict) else str(type(art))
+        
+        # Test global importance logic
+        try:
+            features = art["features"]
+            lgbm = art["lgbm"]
+            info["lgbm_type"] = str(type(lgbm))
+            info["lgbm_dir"] = dir(lgbm)
+            
+            # Check feature importance
+            if hasattr(lgbm, "feature_importance"):
+                importances_dict = lgbm.feature_importance()
+                info["global_test"] = f"success: {importances_dict}"
+            elif hasattr(lgbm, "feature_importances_"):
+                info["global_test"] = f"feature_importances_ exists: {lgbm.feature_importances_}"
+            else:
+                info["global_test"] = "neither method exists"
+        except Exception as e1:
+            info["global_test"] = traceback.format_exc()
+            
+        # Test meta weight logic
+        try:
+            meta = art["meta"]
+            info["meta_type"] = str(type(meta))
+            info["meta_dir"] = dir(meta)
+            
+            # Check model fields
+            if hasattr(meta, "models_"):
+                weights = {}
+                for q, model in meta.models_.items():
+                    coefs = model.coef_.tolist()
+                    weights[float(q)] = [float(c) for c in coefs]
+                info["meta_test"] = f"success: {weights}"
+            else:
+                info["meta_test"] = "models_ attribute missing"
+        except Exception as e2:
+            info["meta_test"] = traceback.format_exc()
+            
+    except Exception as e:
+        info["load_error"] = traceback.format_exc()
+        
+    return info
+
+
+
 
 
 # Serve React static assets in production (registered after root "/" so it doesn't shadow it)
