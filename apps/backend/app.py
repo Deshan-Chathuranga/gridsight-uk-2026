@@ -64,6 +64,9 @@ def stop_scheduler():
 
 @app.get("/")
 def read_root():
+    if frontend_dist_path.exists():
+        from fastapi.responses import FileResponse
+        return FileResponse(str(frontend_dist_path / "index.html"))
     return {
         "project": "GridSight UK Solar Energy Forecasting",
         "api_status": "healthy",
@@ -77,6 +80,24 @@ def read_root():
             }
         ]
     }
+
+
+@app.get("/api/health")
+def health_check():
+    return {
+        "project": "GridSight UK Solar Energy Forecasting",
+        "api_status": "healthy",
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "scheduled_jobs": [
+            {
+                "id": "daily_pipeline_sync",
+                "trigger": "cron[hour=1, minute=0]",
+                "timezone": "UTC",
+                "next_run_time": str(scheduler.get_job("daily_pipeline_sync").next_run_time) if scheduler.get_job("daily_pipeline_sync") else "None"
+            }
+        ]
+    }
+
 
 
 # Serve React static assets in production (registered after root "/" so it doesn't shadow it)
