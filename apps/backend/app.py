@@ -99,6 +99,45 @@ def health_check():
     }
 
 
+@app.get("/api/debug_import")
+def debug_import():
+    import sys
+    import os
+    import traceback
+    
+    debug_info = {
+        "sys.path": sys.path,
+        "cwd": os.getcwd(),
+        "environ_pythonpath": os.environ.get("PYTHONPATH"),
+        "exists_src": os.path.exists("src"),
+        "exists_gridsight": os.path.exists("src/gridsight"),
+        "exists_gridsight_data": os.path.exists("src/gridsight/data"),
+        "dir_contents_root": os.listdir("."),
+        "dir_contents_src": os.listdir("src") if os.path.exists("src") else []
+    }
+    
+    try:
+        import gridsight
+        debug_info["import_gridsight"] = "success"
+    except Exception as e:
+        debug_info["import_gridsight"] = traceback.format_exc()
+        
+    try:
+        import gridsight.data
+        debug_info["import_gridsight_data"] = "success"
+    except Exception as e:
+        debug_info["import_gridsight_data"] = traceback.format_exc()
+        
+    try:
+        import gridsight.data.bronze
+        debug_info["import_gridsight_data_bronze"] = "success"
+    except Exception as e:
+        debug_info["import_gridsight_data_bronze"] = traceback.format_exc()
+        
+    return debug_info
+
+
+
 
 # Serve React static assets in production (registered after root "/" so it doesn't shadow it)
 if frontend_dist_path.exists():
