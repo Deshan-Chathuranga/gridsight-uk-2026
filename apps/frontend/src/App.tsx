@@ -658,7 +658,7 @@ export default function App() {
                     name="q90 Upper Bound"
                     type="monotone" 
                     dataKey="q90_mw" 
-                    stroke="#ef4444" 
+                    stroke="var(--danger-red)" 
                     strokeWidth={1.2}
                     strokeDasharray="3 3"
                     dot={false}
@@ -668,7 +668,7 @@ export default function App() {
                     name="q10 Lower Bound"
                     type="monotone" 
                     dataKey="q10_mw" 
-                    stroke="#3b82f6" 
+                    stroke="var(--q10-cyan)" 
                     strokeWidth={1.2}
                     strokeDasharray="3 3"
                     dot={false}
@@ -711,7 +711,7 @@ export default function App() {
                     name="NESO operator baseline"
                     type="monotone" 
                     dataKey="neso_mw" 
-                    stroke="var(--baseline-blue)" 
+                    stroke="var(--baseline-magenta)" 
                     strokeWidth={1.5}
                     strokeDasharray="4 4"
                     dot={false}
@@ -822,7 +822,7 @@ export default function App() {
 
                   <div style={{ padding: '10px 12px', background: whatifEnabled ? 'rgba(249, 115, 22, 0.05)' : 'rgba(255,255,255,0.02)', border: whatifEnabled ? '1px solid rgba(249, 115, 22, 0.15)' : '1px solid transparent', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Cloud size={12} style={{ color: 'var(--baseline-blue)' }} />
+                      <Cloud size={12} style={{ color: 'var(--q10-cyan)' }} />
                       Cloud Cover (TCC)
                     </span>
                     <span style={{ fontSize: '15px', fontWeight: 'bold', color: whatifEnabled ? 'var(--warning-orange)' : '#fff' }}>

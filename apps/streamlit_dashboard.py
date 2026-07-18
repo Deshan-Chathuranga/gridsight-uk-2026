@@ -295,7 +295,7 @@ else:
             x=df_filtered["timestamp_utc"],
             y=df_filtered["neso_mw"],
             mode='lines',
-            line=dict(color='#4da3ff', width=1.5, dash='dash'),
+            line=dict(color='#ec4899', width=1.5, dash='dash'),
             name="NESO Operator Baseline"
         ))
         
