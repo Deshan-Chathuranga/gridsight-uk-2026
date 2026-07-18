@@ -7,7 +7,7 @@ COPY apps/frontend/ ./
 RUN npm run build
 
 # Stage 2: Build the FastAPI backend
-FROM python:3.11-slim
+FROM python:3.12-slim
 RUN apt-get update && apt-get install -y \
     libgomp1 \
     git \
