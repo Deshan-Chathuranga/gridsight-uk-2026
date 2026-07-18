@@ -82,7 +82,8 @@ def execute_pipeline(horizon_steps: int = 48, upload: bool = False, auto_trigger
     log_path = log_dir / "pipeline_run.log"
     
     current_year = datetime.datetime.now().year
-    python_bin = "./venv/bin/python"
+    import sys
+    python_bin = sys.executable
     
     # 1. Prepare commands
     bronze_args = [python_bin, "-m", "gridsight.data.bronze", "--source", "all", "--years", str(current_year)]
