@@ -10,8 +10,9 @@ import numpy as np
 import requests
 from loguru import logger
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.append(str(PROJECT_ROOT))
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+from gridsight.config import settings
 
 from .met_office import _load_uk_points
 
@@ -111,7 +112,7 @@ def fetch_and_save_live_nwp(start_date: str = "2026-06-01", end_date: str | None
             # Save to partitioned bronze structure
             y = init_time.year
             m = init_time.month
-            out_dir = PROJECT_ROOT / "data" / "bronze" / "met_office_nwp" / f"year={y}" / f"month={m:02d}"
+            out_dir = settings.data_dir / "bronze" / "met_office_nwp" / f"year={y}" / f"month={m:02d}"
             out_dir.mkdir(parents=True, exist_ok=True)
             
             file_name = f"nwp_{init_time.strftime('%Y%m%d')}-{hour:02d}Z.parquet"
