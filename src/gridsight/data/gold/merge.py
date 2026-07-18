@@ -26,6 +26,16 @@ def merge_silver() -> pd.DataFrame:
         logger.error("merge: silver_pv_live is empty - build Silver first")
         return pd.DataFrame()
 
+    if nwp.empty:
+        logger.warning("merge: silver_met_office_nwp is empty - using empty schema fallback")
+        nwp = pd.DataFrame(columns=[TS, "ssrd_uk", "tcc_uk", "lcc_uk", "t2m_uk", "ws10_uk", "init_time", "nwp_age_h", "data_quality_flag"])
+    if neso.empty:
+        logger.warning("merge: silver_neso is empty - using empty schema fallback")
+        neso = pd.DataFrame(columns=[TS, "embedded_solar_mw", "embedded_wind_mw", "data_quality_flag"])
+    if ocf.empty:
+        logger.warning("merge: silver_ocf_pv is empty - using empty schema fallback")
+        ocf = pd.DataFrame(columns=[TS, "ocf_total_mw", "ocf_mean_wh", "ocf_n_systems", "data_quality_flag"])
+
     # --- spine = pv_live, deduped & sorted on the canonical grid ---
     pv = (_norm_ts(pv)
           .rename(columns={"data_quality_flag": "pv_flag"})
