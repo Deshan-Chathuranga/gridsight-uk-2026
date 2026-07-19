@@ -77,6 +77,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("analytics");
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [isMobile, setIsMobile] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.matchMedia) {
@@ -87,6 +88,21 @@ export default function App() {
       return () => media.removeEventListener("change", listener);
     }
   }, []);
+
+  // Parse URL query parameter for admin mode on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      setIsAdmin(params.get("admin") === "true");
+    }
+  }, []);
+
+  // Fallback: If active tab is pipeline but user is not admin, fallback to analytics view
+  useEffect(() => {
+    if (activeTab === "pipeline" && !isAdmin) {
+      setActiveTab("analytics");
+    }
+  }, [activeTab, isAdmin]);
 
   // Theme state persisted in LocalStorage
   const [theme, setTheme] = useState<"light" | "dark">(() => {
@@ -232,6 +248,12 @@ export default function App() {
     }
   };
 
+  // Keep a ref of isSyncing to avoid stale closures in polling interval
+  const isSyncingRef = useRef(isSyncing);
+  useEffect(() => {
+    isSyncingRef.current = isSyncing;
+  }, [isSyncing]);
+
   // 4. Fetch Pipeline Status
   const fetchPipelineStatus = async () => {
     try {
@@ -240,6 +262,13 @@ export default function App() {
       if (res.status === "success") {
         setPipelineStatus(res);
         const running = res.pipeline_state.status === "RUNNING";
+        
+        // Trigger data refetch when pipeline sync completes
+        if (isSyncingRef.current && !running) {
+          fetchForecasts();
+          fetchGlobalXai();
+        }
+        
         setIsSyncing(running);
         if (running) {
           fetchPipelineLogs();
@@ -461,13 +490,15 @@ export default function App() {
             <Cpu size={16} />
             <span>XAI Diagnostics</span>
           </button>
-          <button 
-            className={`nav-tab-btn ${activeTab === "pipeline" ? "active" : ""}`}
-            onClick={() => { setActiveTab("pipeline"); setSidebarOpen(false); }}
-          >
-            <Terminal size={16} />
-            <span>Data Pipeline</span>
-          </button>
+          {isAdmin && (
+            <button 
+              className={`nav-tab-btn ${activeTab === "pipeline" ? "active" : ""}`}
+              onClick={() => { setActiveTab("pipeline"); setSidebarOpen(false); }}
+            >
+              <Terminal size={16} />
+              <span>Data Pipeline</span>
+            </button>
+          )}
         </nav>
         
         {/* Model Config Section */}
@@ -563,13 +594,15 @@ export default function App() {
             <Cpu size={14} />
             <span>XAI</span>
           </button>
-          <button 
-            className={`mobile-tab-btn ${activeTab === "pipeline" ? "active" : ""}`}
-            onClick={() => setActiveTab("pipeline")}
-          >
-            <Terminal size={14} />
-            <span>Pipeline</span>
-          </button>
+          {isAdmin && (
+            <button 
+              className={`mobile-tab-btn ${activeTab === "pipeline" ? "active" : ""}`}
+              onClick={() => setActiveTab("pipeline")}
+            >
+              <Terminal size={14} />
+              <span>Pipeline</span>
+            </button>
+          )}
         </div>
 
         {/* API Warning if loading Mock */}
