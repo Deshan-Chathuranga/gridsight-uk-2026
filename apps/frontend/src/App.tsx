@@ -6,7 +6,7 @@ import {
 import { 
   Sun, RefreshCw, Layers, ShieldAlert, Cpu, 
   Terminal, Calendar, Play, CheckCircle2, XCircle, Clock,
-  Cloud, Thermometer, Wind, Info, Moon
+  Cloud, Thermometer, Wind, Info, Moon, Menu, X
 } from "lucide-react";
 
 // Define base API URL (empty string represents relative URL in production)
@@ -75,6 +75,18 @@ export default function App() {
   const [horizon, setHorizon] = useState<number>(24);
   const [split, setSplit] = useState<string>("test");
   const [activeTab, setActiveTab] = useState<string>("analytics");
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia) {
+      const media = window.matchMedia("(max-width: 1024px)");
+      setIsMobile(media.matches);
+      const listener = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+      media.addEventListener("change", listener);
+      return () => media.removeEventListener("change", listener);
+    }
+  }, []);
 
   // Theme state persisted in LocalStorage
   const [theme, setTheme] = useState<"light" | "dark">(() => {
@@ -373,42 +385,85 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* Mobile Top Header Bar */}
+      {isMobile && (
+        <header className="mobile-header">
+          <div className="logo-group">
+            <Sun className="logo-icon" />
+            <span className="logo-text">GridSight UK</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button 
+              className="theme-toggle-btn"
+              onClick={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <button 
+              className="theme-toggle-btn"
+              onClick={() => setSidebarOpen(prev => !prev)}
+              title="Toggle settings panel"
+              aria-label="Toggle settings panel"
+            >
+              {sidebarOpen ? <X size={16} /> : <Menu size={16} />}
+            </button>
+          </div>
+        </header>
+      )}
+
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)}></div>
+      )}
+
       {/* SIDEBAR CONTROL PANEL */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? "mobile-open" : ""}`}>
         <div className="logo-container">
           <div className="logo-group">
             <Sun className="logo-icon" />
             <span className="logo-text">GridSight UK</span>
           </div>
-          <button 
-            className="theme-toggle-btn"
-            onClick={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            aria-label="Toggle theme"
-          >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button 
+              className="theme-toggle-btn"
+              onClick={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <button 
+              className="theme-toggle-btn mobile-close-btn"
+              onClick={() => setSidebarOpen(false)}
+              title="Close settings panel"
+              aria-label="Close settings panel"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
         <nav className="nav-tabs" aria-label="Sidebar Navigation">
           <button 
             className={`nav-tab-btn ${activeTab === "analytics" ? "active" : ""}`}
-            onClick={() => setActiveTab("analytics")}
+            onClick={() => { setActiveTab("analytics"); setSidebarOpen(false); }}
           >
             <Layers size={16} />
             <span>Forecast Analytics</span>
           </button>
           <button 
             className={`nav-tab-btn ${activeTab === "xai" ? "active" : ""}`}
-            onClick={() => setActiveTab("xai")}
+            onClick={() => { setActiveTab("xai"); setSidebarOpen(false); }}
           >
             <Cpu size={16} />
             <span>XAI Diagnostics</span>
           </button>
           <button 
             className={`nav-tab-btn ${activeTab === "pipeline" ? "active" : ""}`}
-            onClick={() => setActiveTab("pipeline")}
+            onClick={() => { setActiveTab("pipeline"); setSidebarOpen(false); }}
           >
             <Terminal size={16} />
             <span>Data Pipeline</span>
@@ -492,6 +547,31 @@ export default function App() {
 
       {/* MAIN DASHBOARD PANEL */}
       <main className="main-content">
+        {/* Mobile View Selector Tab Bar */}
+        <div className="mobile-tabs-bar" aria-label="Mobile Navigation tabs">
+          <button 
+            className={`mobile-tab-btn ${activeTab === "analytics" ? "active" : ""}`}
+            onClick={() => setActiveTab("analytics")}
+          >
+            <Layers size={14} />
+            <span>Analytics</span>
+          </button>
+          <button 
+            className={`mobile-tab-btn ${activeTab === "xai" ? "active" : ""}`}
+            onClick={() => setActiveTab("xai")}
+          >
+            <Cpu size={14} />
+            <span>XAI</span>
+          </button>
+          <button 
+            className={`mobile-tab-btn ${activeTab === "pipeline" ? "active" : ""}`}
+            onClick={() => setActiveTab("pipeline")}
+          >
+            <Terminal size={14} />
+            <span>Pipeline</span>
+          </button>
+        </div>
+
         {/* API Warning if loading Mock */}
         {isMock && (
           <div className="glass-panel" style={{ borderLeft: '4px solid var(--warning-orange)', display: 'flex', gap: '12px', alignItems: 'center', padding: '12px 20px' }}>
