@@ -7,6 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 import datetime
 from loguru import logger
 
+import gridsight
 from .routes import forecasts, xai, pipeline
 from .pipeline_runner import execute_pipeline, trigger_pipeline_sync_thread
 
@@ -198,6 +199,7 @@ def debug_xai(horizon: int = 24):
         info["load_error"] = traceback.format_exc()
         
     return info
+
 
 
 
