@@ -60,6 +60,7 @@ def get_global_importance(horizon: int = Query(24, enum=[6, 12, 24])):
             ]
             return {"status": "success", "is_mock": True, "importances": mock_importances}
 
+        import gridsight
         art = joblib.load(stack_path)
         features = art["features"]
         lgbm = art["lgbm"]
@@ -197,6 +198,7 @@ def get_local_contributions(
                     ]
                 }
 
+        import gridsight
         art = joblib.load(stack_path)
         features = art["features"]
         lgbm = art["lgbm"]
@@ -284,6 +286,7 @@ def get_meta_weights(horizon: int = Query(24, enum=[6, 12, 24])):
                 "weights": mock_weights
             }
             
+        import gridsight
         art = joblib.load(stack_path)
         meta = art["meta"] # LinearQuantileStacker object
         
@@ -378,6 +381,7 @@ def simulate_local_xai(
                 ]
             }
 
+        import gridsight
         art = joblib.load(stack_path)
         features = art["features"]
         lgbm = art["lgbm"]

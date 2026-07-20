@@ -7,7 +7,6 @@ from apscheduler.triggers.cron import CronTrigger
 import datetime
 from loguru import logger
 
-import gridsight
 from .routes import forecasts, xai, pipeline
 from .pipeline_runner import execute_pipeline, trigger_pipeline_sync_thread
 
@@ -33,6 +32,8 @@ app.include_router(xai.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
+TS = "timestamp_utc"
 frontend_dist_path = PROJECT_ROOT / "apps" / "frontend" / "dist"
 
 # Initialize Background Scheduler
