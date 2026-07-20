@@ -255,11 +255,90 @@ out.to_parquet(r"{tmp_out}")
             
     return True
 
+
+def extract_and_save_xai_metrics(model_dir: Path):
+    """Extracts global feature importances and meta weights from stack.joblib and saves as JSON."""
+    stack_path = model_dir / "stack.joblib"
+    if not stack_path.exists():
+        return
+        
+    try:
+        import joblib
+        import json
+        import gridsight
+        
+        art = joblib.load(stack_path)
+        
+        # 1. Global feature importances
+        features = art["features"]
+        lgbm = art["lgbm"]
+        importances_dict = lgbm.feature_importance()
+        q50_importances = importances_dict.get(0.5, np.zeros(len(features)))
+        
+        descriptions = {
+            "ssrd_uk": "Downwelling shortwave radiation (Solar Driver)",
+            "clearsky_cos": "Cosine of Solar Zenith Angle (Physical Solar Gating)",
+            "solar_elevation_deg": "Sun elevation angle (Solar Centroid)",
+            "tcc_uk": "Total cloud cover (UK weighted)",
+            "lcc_uk": "Low cloud cover (UK weighted)",
+            "t2m_uk": "2m temperature (UK weighted)",
+            "ws10_uk": "10m wind speed (UK weighted)",
+            "hour": "Hour of day",
+            "half_hour": "Half-hour index",
+            "dow": "Day of week",
+            "month": "Month of year",
+            "is_daylight": "Daylight binary gate",
+            "capacity_mwp": "Installed capacity",
+            "embedded_solar_mw": "NESO embedded solar forecast",
+            "embedded_wind_mw": "NESO embedded wind forecast"
+        }
+        
+        res = []
+        for feat, val in zip(features, q50_importances):
+            desc = descriptions.get(feat, "Model Feature")
+            if feat.startswith("gen_lag_"):
+                desc = f"Generation {int(feat.split('_')[-1])//2}h ago (historic baseline)"
+            elif feat.startswith("cf_lag_"):
+                desc = f"Capacity factor {int(feat.split('_')[-1])//2}h ago"
+            elif feat.startswith("gen_roll_"):
+                desc = "Rolling average generation"
+                
+            res.append({
+                "feature": feat,
+                "importance": int(val),
+                "description": desc
+            })
+        res = sorted(res, key=lambda x: x["importance"], reverse=True)[:15]
+        
+        with open(model_dir / "global_importance.json", "w") as f:
+            json.dump(res, f, indent=2)
+            
+        # 2. Meta weights
+        meta = art["meta"]
+        weights = {}
+        for q, model in meta.models_.items():
+            coefs = model.coef_.tolist()
+            weights[float(q)] = [float(c) for c in coefs]
+            
+        with open(model_dir / "meta_weights.json", "w") as f:
+            json.dump(weights, f, indent=2)
+            
+        logger.info(f"Automatically updated static XAI JSON files in {model_dir}")
+    except Exception as e:
+        logger.warning(f"Could not automatically extract XAI metrics: {e}")
+
+
 def main():
     logger.info("Starting live inference generator for all horizons...")
     for h in [6, 12, 24]:
         run_inference_for_horizon(h)
+    
+    # Auto-extract XAI metrics from Model A directory
+    logger.info("Auto-extracting XAI metrics for web server optimization...")
+    extract_and_save_xai_metrics(ARTIFACTS_DIR / "model")
+    
     logger.success("Live inference run complete.")
+
 
 if __name__ == "__main__":
     main()

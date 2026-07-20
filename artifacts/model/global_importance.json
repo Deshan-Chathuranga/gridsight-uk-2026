@@ -1,0 +1,77 @@
+[
+  {
+    "feature": "embedded_solar_cf",
+    "importance": 3328,
+    "description": "Model Feature"
+  },
+  {
+    "feature": "cf_roll_mean_336",
+    "importance": 3097,
+    "description": "Model Feature"
+  },
+  {
+    "feature": "t2m_uk",
+    "importance": 3078,
+    "description": "2m temperature (UK weighted)"
+  },
+  {
+    "feature": "lcc_uk",
+    "importance": 3045,
+    "description": "Low cloud cover (UK weighted)"
+  },
+  {
+    "feature": "cf_roll_mean_48",
+    "importance": 2950,
+    "description": "Model Feature"
+  },
+  {
+    "feature": "embedded_wind_cf",
+    "importance": 2948,
+    "description": "Model Feature"
+  },
+  {
+    "feature": "tcc_uk",
+    "importance": 2880,
+    "description": "Total cloud cover (UK weighted)"
+  },
+  {
+    "feature": "cf_lag_48",
+    "importance": 2721,
+    "description": "Capacity factor 24h ago"
+  },
+  {
+    "feature": "ws10_uk",
+    "importance": 2632,
+    "description": "10m wind speed (UK weighted)"
+  },
+  {
+    "feature": "ssrd_uk",
+    "importance": 2475,
+    "description": "Downwelling shortwave radiation (Solar Driver)"
+  },
+  {
+    "feature": "doy_cos",
+    "importance": 2427,
+    "description": "Model Feature"
+  },
+  {
+    "feature": "cf_lag_96",
+    "importance": 2320,
+    "description": "Capacity factor 48h ago"
+  },
+  {
+    "feature": "doy_sin",
+    "importance": 2280,
+    "description": "Model Feature"
+  },
+  {
+    "feature": "doy",
+    "importance": 2212,
+    "description": "Model Feature"
+  },
+  {
+    "feature": "cf_lag_336",
+    "importance": 2153,
+    "description": "Capacity factor 168h ago"
+  }
+]

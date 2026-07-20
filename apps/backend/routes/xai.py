@@ -42,6 +42,15 @@ def get_global_importance(horizon: int = Query(24, enum=[6, 12, 24])):
     try:
         steps = {6: 12, 12: 24, 24: 48}[horizon]
         folder = "model" if steps == 48 else f"model_h{steps}"
+        
+        # Check if pre-computed JSON is available
+        json_path = ARTIFACTS_DIR / folder / "global_importance.json"
+        if json_path.exists():
+            import json
+            with open(json_path, "r") as f:
+                res = json.load(f)
+            return {"status": "success", "is_mock": False, "importances": res}
+            
         stack_path = ARTIFACTS_DIR / folder / "stack.joblib"
         
         if not stack_path.exists():
@@ -263,7 +272,6 @@ def get_meta_weights(horizon: int = Query(24, enum=[6, 12, 24])):
     try:
         steps = {6: 12, 12: 24, 24: 48}[horizon]
         folder = "model" if steps == 48 else f"model_h{steps}"
-        stack_path = ARTIFACTS_DIR / folder / "stack.joblib"
         
         # 7 Stacking features: TCN q10, TCN q50, TCN q90, LGBM q10, LGBM q50, LGBM q90, Clear-Sky GHI
         feature_names = [
@@ -271,6 +279,23 @@ def get_meta_weights(horizon: int = Query(24, enum=[6, 12, 24])):
             "LGBM q10 prediction", "LGBM q50 prediction", "LGBM q90 prediction",
             "Clear-Sky GHI Index"
         ]
+        
+        # Check if pre-computed JSON is available
+        json_path = ARTIFACTS_DIR / folder / "meta_weights.json"
+        if json_path.exists():
+            import json
+            with open(json_path, "r") as f:
+                weights = json.load(f)
+            # Map keys back to float since JSON serialization turns them to strings
+            weights_float = {float(k): v for k, v in weights.items()}
+            return {
+                "status": "success",
+                "is_mock": False,
+                "features": feature_names,
+                "weights": weights_float
+            }
+            
+        stack_path = ARTIFACTS_DIR / folder / "stack.joblib"
         
         if not stack_path.exists():
             # Mock weights for demo
