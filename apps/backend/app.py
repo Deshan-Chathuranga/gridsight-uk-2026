@@ -9,6 +9,7 @@ from loguru import logger
 
 from .routes import forecasts, xai, pipeline
 from .pipeline_runner import execute_pipeline, trigger_pipeline_sync_thread
+from .middleware.rate_limiter import RateLimitMiddleware
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -16,6 +17,9 @@ app = FastAPI(
     description="Backend service providing probabilistic solar forecasts, Explainable AI diagnostics, and pipeline ingestion control.",
     version="1.0.0"
 )
+
+# Enable rate limiting to prevent abuse
+app.add_middleware(RateLimitMiddleware)
 
 # Enable CORS for local React development
 app.add_middleware(
