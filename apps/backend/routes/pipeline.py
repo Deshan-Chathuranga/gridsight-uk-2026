@@ -30,10 +30,35 @@ def trigger_sync(
     else:
         return {"status": "error", "message": "Failed to trigger pipeline sync."}
 
+@router.post("/pause")
+def pause_daily_schedule():
+    """Temporarily pauses the daily automatic pipeline schedule."""
+    from ..app import scheduler
+    job = scheduler.get_job("daily_pipeline_sync")
+    if job:
+        scheduler.remove_job("daily_pipeline_sync")
+        return {"status": "success", "message": "Daily pipeline schedule has been paused."}
+    return {"status": "success", "message": "Daily pipeline schedule is already paused."}
+
+@router.post("/resume")
+def resume_daily_schedule():
+    """Resumes the daily automatic pipeline schedule at 01:00 UTC."""
+    from ..app import scheduler, scheduled_sync_job
+    from apscheduler.triggers.cron import CronTrigger
+    scheduler.add_job(
+        scheduled_sync_job,
+        trigger=CronTrigger(hour=1, minute=0, timezone="UTC"),
+        id="daily_pipeline_sync",
+        replace_existing=True
+    )
+    return {"status": "success", "message": "Daily pipeline schedule resumed for 01:00 UTC."}
+
 @router.get("/status")
 def get_status():
     """Returns the current state of the pipeline and directory health statistics."""
     state = get_pipeline_state()
+    from ..app import scheduler
+    job = scheduler.get_job("daily_pipeline_sync")
     
     # Calculate folder sizes to check ingestion health
     def get_dir_stats(path: Path) -> dict:
@@ -56,7 +81,11 @@ def get_status():
     return {
         "status": "success",
         "pipeline_state": state,
-        "storage_stats": stats
+        "storage_stats": stats,
+        "daily_schedule": {
+            "paused": job is None,
+            "next_run_time": str(job.next_run_time) if job else "Paused"
+        }
     }
 
 @router.get("/logs")

@@ -9,12 +9,33 @@ def client():
         yield c
 
 def test_api_root(client):
-    response = client.get("/")
+    response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
     assert data["api_status"] == "healthy"
     assert "project" in data
     assert "scheduled_jobs" in data
+
+def test_pipeline_pause_resume(client):
+    # Test pause endpoint
+    pause_res = client.post("/api/pipeline/pause")
+    assert pause_res.status_code == 200
+    assert pause_res.json()["status"] == "success"
+
+    # Test status reflects paused schedule
+    status_res = client.get("/api/pipeline/status")
+    assert status_res.status_code == 200
+    assert status_res.json()["daily_schedule"]["paused"] is True
+
+    # Test resume endpoint
+    resume_res = client.post("/api/pipeline/resume")
+    assert resume_res.status_code == 200
+    assert resume_res.json()["status"] == "success"
+
+    # Test status reflects active schedule
+    status_res2 = client.get("/api/pipeline/status")
+    assert status_res2.status_code == 200
+    assert status_res2.json()["daily_schedule"]["paused"] is False
 
 def test_get_forecasts_valid(client):
     response = client.get("/api/forecasts?model=model_a&horizon=24&split=test")

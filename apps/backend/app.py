@@ -1,4 +1,5 @@
 import uvicorn
+import os
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,16 +52,21 @@ def scheduled_sync_job():
 
 @app.on_event("startup")
 def start_scheduler():
-    """Starts the APScheduler on app startup and schedules the daily sync at 01:00 UTC."""
+    """Starts the APScheduler on app startup and schedules the daily sync at 01:00 UTC unless paused."""
     scheduler.start()
-    # Schedule daily at 01:00 UTC
-    scheduler.add_job(
-        scheduled_sync_job,
-        trigger=CronTrigger(hour=1, minute=0, timezone="UTC"),
-        id="daily_pipeline_sync",
-        replace_existing=True
-    )
-    logger.success("Scheduler started. Scheduled daily sync job at 01:00 UTC.")
+    pause_daily = os.getenv("PAUSE_DAILY_PIPELINE", "true").lower() in ("true", "1", "yes")
+    
+    if pause_daily:
+        logger.info("Daily ingestion pipeline schedule is currently PAUSED (PAUSE_DAILY_PIPELINE=true).")
+    else:
+        # Schedule daily at 01:00 UTC
+        scheduler.add_job(
+            scheduled_sync_job,
+            trigger=CronTrigger(hour=1, minute=0, timezone="UTC"),
+            id="daily_pipeline_sync",
+            replace_existing=True
+        )
+        logger.success("Scheduler started. Scheduled daily sync job at 01:00 UTC.")
 
 @app.on_event("shutdown")
 def stop_scheduler():
@@ -73,6 +79,7 @@ def read_root():
     if frontend_dist_path.exists():
         from fastapi.responses import FileResponse
         return FileResponse(str(frontend_dist_path / "index.html"))
+    job = scheduler.get_job("daily_pipeline_sync")
     return {
         "project": "GridSight UK Solar Energy Forecasting",
         "api_status": "healthy",
@@ -82,7 +89,8 @@ def read_root():
                 "id": "daily_pipeline_sync",
                 "trigger": "cron[hour=1, minute=0]",
                 "timezone": "UTC",
-                "next_run_time": str(scheduler.get_job("daily_pipeline_sync").next_run_time) if scheduler.get_job("daily_pipeline_sync") else "None"
+                "status": "active" if job else "paused",
+                "next_run_time": str(job.next_run_time) if job else "Paused"
             }
         ]
     }
@@ -90,6 +98,7 @@ def read_root():
 
 @app.get("/api/health")
 def health_check():
+    job = scheduler.get_job("daily_pipeline_sync")
     return {
         "project": "GridSight UK Solar Energy Forecasting",
         "api_status": "healthy",
@@ -99,7 +108,8 @@ def health_check():
                 "id": "daily_pipeline_sync",
                 "trigger": "cron[hour=1, minute=0]",
                 "timezone": "UTC",
-                "next_run_time": str(scheduler.get_job("daily_pipeline_sync").next_run_time) if scheduler.get_job("daily_pipeline_sync") else "None"
+                "status": "active" if job else "paused",
+                "next_run_time": str(job.next_run_time) if job else "Paused"
             }
         ]
     }

@@ -4,6 +4,8 @@
 
 > MSc Data Science · Professional Team Project · 2025/2026 · Group 4
 
+🌐 **Live Production Web Application:** [https://gridsight-uk-2026-production.up.railway.app/](https://gridsight-uk-2026-production.up.railway.app/)
+
 ---
 
 ## Table of Contents
@@ -37,6 +39,17 @@ GridSight UK is a probabilistic solar power generation forecasting system for th
 | **6-hour ahead** | 12 steps | Intra-day trading |
 | **12-hour ahead** | 24 steps | Daily portfolio adjustments |
 | **24-hour ahead** | 48 steps | Day-ahead market **(primary target)** |
+
+### 🌐 Live Production Web Application
+
+The interactive web application is deployed live on Railway Cloud:
+* **Deployed Web Application URL**: [https://gridsight-uk-2026-production.up.railway.app/](https://gridsight-uk-2026-production.up.railway.app/)
+
+The application features:
+- **Interactive Probabilistic Forecast Plots**: Displays real-time 80% confidence bands ($q_{10}, q_{50}, q_{90}$) across all three forecasting horizons (6h, 12h, 24h).
+- **UK Solar Generation Monitoring**: Real-time generation vs. capacity tracking with baseline NESO forecast comparisons.
+- **Regional Weather Integration**: NWP weather variables across 7 UK regional forecast zones.
+- **Model Diagnostics**: Detailed evaluation metrics, pinball loss analysis, and interval coverage statistics.
 
 ### Models
 
@@ -113,6 +126,8 @@ gridsight-uk-2026/
 │   └── Week-4-Scrum-Meeting-Note-Team-4.pdf
 │
 ├── lstm_q_summary_report.pdf          # Model performance summary report
+├── Dockerfile                         # Container configuration for web app backend/frontend
+├── railway.json                       # Railway deployment configuration
 ├── requirements.txt                   # Python dependencies (pinned)
 ├── .env                               # HF_TOKEN (git-ignored)
 ├── .gitignore
