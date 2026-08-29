@@ -1,0 +1,99 @@
+name: GridSight UK CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  python-test-and-lint:
+    name: Python Lint & Pytest Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov ruff
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Code Quality & Lint Check
+        run: |
+          ruff check src/ apps/backend/ tests/ || echo "Ruff warnings detected"
+
+      - name: Run Pytest Suite with Coverage
+        run: |
+          pytest --cov=gridsight --cov=apps.backend --cov-report=xml
+
+  frontend-build:
+    name: React Frontend Build Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install & Build Frontend
+        working-directory: apps/frontend
+        run: |
+          npm ci || npm install
+          npm run build
+
+  docker-build:
+    name: Docker Container Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: gridsight-uk:ci-test
+
+  deploy-railway:
+    name: Deploy to Railway Production
+    needs: [python-test-and-lint, frontend-build, docker-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Trigger Railway Deployment
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -n "$RAILWAY_TOKEN" ]; then
+            echo "Triggering deployment via Railway CLI..."
+            npm install -g @railway/cli
+            railway up --detach
+          else
+            echo "RAILWAY_TOKEN secret not set in GitHub repository settings. Skipping auto-deploy step."
+          fi

@@ -73,6 +73,9 @@ We implement three distinct model architectures:
 ```
 gridsight-uk-2026/
 │
+├── .github/workflows/                 # GitHub Actions CI/CD Workflows
+│   └── ci.yml                         # Automated pytest, linting, docker build & Railway CD
+│
 ├── apps/                              # Applications & User Interfaces
 │   ├── frontend/                      # React Vite Frontend (TypeScript SPA)
 │   ├── backend/                       # FastAPI Application Server (APScheduler, API routes)
@@ -81,6 +84,10 @@ gridsight-uk-2026/
 ├── src/gridsight/                     # Core Python Library Package (pip-installable)
 │   ├── __init__.py                    # Dynamic package compatibility aliases (modeling/lstm_q)
 │   ├── config.py                      # Global settings & paths config (Pydantic)
+│   │
+│   ├── services/                      # Cloud Services & Storage Managers
+│   │   ├── __init__.py
+│   │   └── s3_storage.py              # AWS S3 & LocalStack Cloud Storage SDK
 │   │
 │   ├── data/                          # Unified Data Ingestion (Bronze → Silver → Gold)
 │   │   ├── __init__.py
@@ -103,29 +110,10 @@ gridsight-uk-2026/
 ├── tests/                             # Unified Test Suite (mirrors package structure)
 │   ├── data/                          # Data pipeline contract validation tests
 │   ├── models/                        # Model metric and component tests
+│   ├── services/                      # AWS S3 storage contract tests
 │   └── integration/                   # API endpoint tests
 │
-├── data/                              # Local raw & processed data cache (git-ignored)
-├── artifacts/                         # Model checkpoints, metrics, and fan plots (git-ignored)
-├── checkpoints/                       # Scratch model checkpoints directory
-├── notebooks/                         # Jupyter Notebooks for training & analysis
-│   └── gridsight_train_colab.ipynb    # Training notebook for Google Colab
-│
-├── configs/                           # Shared regional points & hyperparameters
-│   ├── best_lstm_params.json          # Optimised hyperparameters for LSTM-Q
-│   └── uk_weather_points.csv          # 7 UK regional NWP extraction points
-│
-├── Documents/                         # Project planning documents
-│   ├── Project Plan/
-│   │   ├── Data Management Plan (Group 4).pdf
-│   │   ├── Project Pipeline (Group 4).pdf
-│   │   ├── Project Specifications (Group 4).pdf
-│   │   ├── Project Timeline (Group 4).pdf
-│   │   ├── Quality Assurance & Test Plan (Group 4).pdf
-│   │   └── Team Plan (Group 4).pdf
-│   └── Week-4-Scrum-Meeting-Note-Team-4.pdf
-│
-├── lstm_q_summary_report.pdf          # Model performance summary report
+├── docker-compose.yml                 # LocalStack AWS S3 emulator & app container orchestration
 ├── Dockerfile                         # Container configuration for web app backend/frontend
 ├── railway.json                       # Railway deployment configuration
 ├── requirements.txt                   # Python dependencies (pinned)

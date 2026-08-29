@@ -8,7 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 import datetime
 from loguru import logger
 
-from .routes import forecasts, xai, pipeline
+from .routes import forecasts, xai, pipeline, storage
 from .pipeline_runner import execute_pipeline, trigger_pipeline_sync_thread
 from .middleware.rate_limiter import RateLimitMiddleware
 
@@ -35,6 +35,7 @@ app.add_middleware(
 app.include_router(forecasts.router, prefix="/api")
 app.include_router(xai.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
+app.include_router(storage.router, prefix="/api")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
