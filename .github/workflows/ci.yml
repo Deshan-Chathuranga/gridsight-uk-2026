@@ -98,5 +98,5 @@ jobs:
             npm install -g @railway/cli
             railway up --detach
           else
-            echo "RAILWAY_TOKEN secret not set in GitHub repository settings. Skipping auto-deploy step."
+            echo "Railway is connected via native GitHub integration. Railway will automatically build and deploy the main branch."
           fi
