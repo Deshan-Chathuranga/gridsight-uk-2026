@@ -11,6 +11,7 @@
 ## Table of Contents
 
 1. [Project Overview](#1-project-overview)
+   - [System Architecture & CI/CD Cloud Diagram](#-system-architecture--cicd-cloud-diagram)
 2. [Repository Structure](#2-repository-structure)
 3. [Environment Setup](#3-environment-setup)
 4. [Quick Start — End-to-End Pipeline](#4-quick-start--end-to-end-pipeline)
@@ -64,7 +65,54 @@ We implement three distinct model architectures:
 |---|---|---|
 | nMAE (normalised by capacity) | ≤ 4.0% | ✅ 0.79% – 1.26% |
 | Skill Score (vs 24h persistence) | > 0.30 | ✅ 0.660 – 0.900 |
-| PICP (80% prediction interval coverage) | 0.78 – 0.82 | ✅ 0.780 – 0.846 |
+### 🏗️ System Architecture & CI/CD Cloud Diagram
+
+The diagram below illustrates the end-to-end flow of **GridSight UK**, starting from multi-source data ingestion (Bronze → Silver → Gold), passing through the ML modeling engine (TCN-Q, LGBM-Q Stacker, PyTorch LSTM-Q, and Chronos-Q), backed by **AWS S3 / LocalStack** cloud storage & HuggingFace Hub registries, and deployed to **Railway Cloud** via **GitHub Actions CI/CD**:
+
+```mermaid
+graph TD
+    %% Styling
+    classDef dataLayer fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef modelLayer fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    classDef cloudLayer fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
+    classDef cicdLayer fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
+    classDef appLayer fill:#fbe9e7,stroke:#d84315,stroke-width:2px;
+
+    subgraph Data_Pipeline ["1. Data Pipeline (Bronze ➔ Silver ➔ Gold)"]
+        A1["NESO / MetOffice / PVLive / OCF APIs"] ::: dataLayer --> A2["Bronze Layer: Raw Downloads"] ::: dataLayer
+        A2 --> A3["Silver Layer: UTC Aligned & Cleaned"] ::: dataLayer
+        A3 --> A4["Gold Layer: Feature Store"] ::: dataLayer
+    end
+
+    subgraph Model_Engine ["2. ML Forecasting & Calibration Engine"]
+        A4 --> M1["Model A: TCN-Q + LGBM-Q Stacker"] ::: modelLayer
+        A4 --> M2["Model B: PyTorch LSTM-Q"] ::: modelLayer
+        A4 --> M3["Model C: Pretrained Chronos-Q Benchmark"] ::: modelLayer
+        M1 & M2 & M3 --> M4["Pinball Loss & 80% PICP Post-Hoc Calibration"] ::: modelLayer
+    end
+
+    subgraph Cloud_Storage ["3. Cloud Storage & Model Registries"]
+        M4 --> S1[("AWS S3 / LocalStack Storage Manager")] ::: cloudLayer
+        M4 --> S2[("HuggingFace Hub Datasets & Checkpoints")] ::: cloudLayer
+    end
+
+    subgraph Serving_Layer ["4. Production Web Serving Layer"]
+        S1 & S2 --> B1["FastAPI Application Server (APScheduler)"] ::: appLayer
+        B1 --> F1["React Vite TypeScript SPA (Tailwind CSS)"] ::: appLayer
+    end
+
+    subgraph CICD_Pipeline ["5. CI/CD & Automated Deployment"]
+        G1["Git Push / PR to main"] ::: cicdLayer --> G2["GitHub Actions CI Workflow"] ::: cicdLayer
+        G2 -->|Pytest Suite| G3["Unit & Contract Tests Passed"] ::: cicdLayer
+        G2 -->|Docker Build| G4["Container Validated"] ::: cicdLayer
+        G3 & G4 -->|Auto Deploy| G5["Railway Cloud Deployment"] ::: cicdLayer
+        G5 --> B1 & F1
+    end
+```
+
+<p align="center">
+  <img src="docs/system_architecture_diagram.jpg" alt="GridSight UK System Architecture Diagram" width="850"/>
+</p>
 
 ---
 
