@@ -11,11 +11,11 @@ class Settings(BaseSettings):
         case_sensitive=False
     )
     # API
-    hf_token: str
+    hf_token: str = Field(default="")
     # Paths
     data_dir: Path = Field(default=Path("./data"))
 
-    bronze_hf_repo: str
+    bronze_hf_repo: str = Field(default="gridsight-team/gridsight-bronze-data")
     # optional; if unset, derived from bronze_hf_repo (bronze -> silver/gold)
     silver_hf_repo: str | None = None
     gold_hf_repo: str | None = None

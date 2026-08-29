@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-python-version: '3.12'
+          python-version: '3.12'
           cache: 'pip'
 
       - name: Install Dependencies
@@ -33,6 +33,9 @@ jobs:
           ruff check src/ apps/backend/ tests/ || echo "Ruff warnings detected"
 
       - name: Run Pytest Suite with Coverage
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN || 'dummy_test_token' }}
+          BRONZE_HF_REPO: ${{ secrets.BRONZE_HF_REPO || 'gridsight-team/gridsight-bronze-data' }}
         run: |
           pytest --cov=gridsight --cov=apps.backend --cov-report=xml
 
