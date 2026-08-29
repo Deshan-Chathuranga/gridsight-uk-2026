@@ -144,30 +144,41 @@ def generate_bronze_eda(output_dir, df_gold):
     # 3. Night anomalies and clamping to 0 MW based on solar geometry
     print("  -> Plotting night anomalies & clamping...")
     # Find night slots where solar elevation is below the threshold
-    # Read raw PV observations for a winter month where offsets are very prominent
-    raw_winter = pd.read_parquet("data/bronze/pv_live/year=2024/month=12/gsp_observations.parquet")
-    raw_winter = raw_winter[raw_winter["gsp_id"] == 0].copy()
-    raw_winter["datetime_gmt"] = pd.to_datetime(raw_winter["datetime_gmt"])
-    # Period-end shift raw GMT to match period-start UTC
-    raw_winter["timestamp_utc"] = raw_winter["datetime_gmt"] - pd.Timedelta(minutes=30)
-    raw_winter = raw_winter.set_index("timestamp_utc")
+    # Read raw PV observations for January 2023 where sensor offsets are prominent
+    raw_month = pd.read_parquet("data/bronze/pv_live/year=2023/month=01/gsp_observations.parquet")
+    raw_month = raw_month[raw_month["gsp_id"] == 0].copy()
+    raw_month["datetime_gmt"] = pd.to_datetime(raw_month["datetime_gmt"])
+    raw_month["timestamp_utc"] = raw_month["datetime_gmt"] - pd.Timedelta(minutes=30)
+    raw_month["timestamp_utc"] = pd.to_datetime(raw_month["timestamp_utc"], utc=True)
     
-    df_gold_winter = df_gold[df_gold["timestamp_utc"].dt.month == 12].set_index("timestamp_utc")
+    # Join raw bronze and gold features on UTC timestamp
+    df_night = pd.merge(
+        df_gold[["timestamp_utc", "solar_elevation_deg", "target_mw"]],
+        raw_month[["timestamp_utc", "generation_mw"]],
+        on="timestamp_utc"
+    )
     
-    # Join raw and gold
-    df_night = df_gold_winter[["solar_elevation_deg", "target_mw"]].join(raw_winter["generation_mw"], rsuffix="_raw", how="inner")
+    df_night_only = df_night[df_night["solar_elevation_deg"] < NIGHT_ELEVATION_THRESHOLD].copy()
     
-    # Take a sample of night times
-    df_night_only = df_night[df_night["solar_elevation_deg"] < NIGHT_ELEVATION_THRESHOLD].sample(min(MAX_NIGHT_SAMPLES, len(df_night)), random_state=42)
+    # Preserve all non-zero night anomalies and combine with a representative sample of 0 MW night records
+    df_nonzero = df_night_only[df_night_only["generation_mw"] > 0]
+    df_zero_sample = df_night_only[df_night_only["generation_mw"] == 0].sample(
+        min(MAX_NIGHT_SAMPLES - len(df_nonzero), len(df_night_only[df_night_only["generation_mw"] == 0])),
+        random_state=42
+    )
+    df_plot_sample = pd.concat([df_nonzero, df_zero_sample])
     
     fig, ax = plt.subplots(figsize=(8, 4.5), dpi=300)
-    ax.scatter(df_night_only["solar_elevation_deg"], df_night_only["generation_mw"], color=CORAL, alpha=0.6, label="Raw Bronze (Sensor Calibration Drift)", s=25)
-    ax.scatter(df_night_only["solar_elevation_deg"], df_night_only["target_mw"], color=NAVY, alpha=0.9, label="Cleaned Silver (Clamped to 0 MW)", s=15)
+    ax.scatter(df_plot_sample["solar_elevation_deg"], df_plot_sample["generation_mw"], color=CORAL, alpha=0.7, label="Raw Bronze (Sensor Calibration Drift)", s=25)
+    ax.scatter(df_plot_sample["solar_elevation_deg"], df_plot_sample["target_mw"], color=NAVY, alpha=0.9, label="Cleaned Silver (Clamped to 0 MW)", s=15)
     
     ax.axhline(0, color=SLATE, ls='-', alpha=0.5)
-    ax.set_title("Physical Constraint Filters: Night Generation Anomalies Clamped\n(Sheffield PV_Live observations at solar elevation < -5° in December 2024)", color=NAVY, weight='bold')
+    ax.set_title("Physical Constraint Filters: Night Generation Anomalies Clamped\n(Sheffield PV_Live observations at solar elevation < -5° in January 2023)", color=NAVY, weight='bold')
     ax.set_xlabel("Solar Elevation Angle (Degrees)", color=NAVY)
     ax.set_ylabel("Recorded Generation (MW)", color=NAVY)
+    
+    max_gen = df_plot_sample["generation_mw"].max()
+    ax.set_ylim(-0.002, max(max_gen * 1.15, 0.01))
     ax.legend(frameon=True, facecolor='white', edgecolor='#e2e8f0')
     plt.tight_layout()
     fig.savefig(os.path.join(output_dir, "bronze_night_anomalies.png"), bbox_inches='tight')

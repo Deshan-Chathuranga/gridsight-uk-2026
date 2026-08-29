@@ -92,18 +92,18 @@ def generate_mock_forecast(model: str, horizon: int, split: str) -> pd.DataFrame
 
     # Load base file
     df = pd.read_parquet(base_file).copy()
+    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
     np.random.seed(42 + horizon + (1 if model == "model_a" else 2))
     
-    # Introduce model-specific variance & noise to make the curves different
-    noise_scale = 0.02 if model == "model_c" else 0.01
+    # Introduce calibrated noise so q50 tracks y_true closely
+    noise_scale = 0.015 if model == "model_c" else 0.01
     
-    df["q50"] = df["q50"] + np.random.normal(0, noise_scale, len(df))
-    # Calibrate intervals
-    df["q10"] = df["q50"] - (df["q50"] - df["q10"]) * (1.0 + np.random.normal(0, 0.05))
-    df["q90"] = df["q50"] + (df["q90"] - df["q50"]) * (1.0 + np.random.normal(0, 0.05))
+    df["q50"] = np.clip(df["y_true"] + np.random.normal(0, noise_scale, len(df)), 0.0, None)
+    df["q10"] = np.clip(df["q50"] - np.abs(np.random.normal(0.04, 0.01, len(df))), 0.0, None)
+    df["q90"] = df["q50"] + np.abs(np.random.normal(0.05, 0.01, len(df)))
     
     if "neso" in df.columns:
-        df["neso"] = df["neso"] + np.random.normal(0, 0.02, len(df))
+        df["neso"] = np.clip(df["y_true"] + np.random.normal(0, 0.02, len(df)), 0.0, None)
     
     # Clamping & constraints
     df["q10"] = df["q10"].clip(0.0)
@@ -116,7 +116,6 @@ def generate_mock_forecast(model: str, horizon: int, split: str) -> pd.DataFrame
     
     # Zero at night
     if "timestamp_utc" in df.columns:
-        df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"])
         hour = df["timestamp_utc"].dt.hour
         is_night = (hour < 6) | (hour > 19)
         for col in ["y_true", "q10", "q50", "q90", "neso"]:
@@ -145,19 +144,24 @@ def get_forecasts(
         else:
             df = pd.read_parquet(parquet_path)
             
-        df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"])
+        df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
         df = df.sort_values("timestamp_utc").reset_index(drop=True)
         
         # Load and merge weather features
         weather_df = load_weather_features(horizon)
         if not weather_df.empty:
+            weather_df["timestamp_utc"] = pd.to_datetime(weather_df["timestamp_utc"], utc=True)
             df = pd.merge(df, weather_df, on="timestamp_utc", how="left")
             
-        # Filtering by date
+        # Filtering by date (handling tz-aware / tz-naive strings gracefully)
         if start_date:
-            df = df[df["timestamp_utc"] >= pd.to_datetime(start_date)]
+            sd = pd.to_datetime(start_date, utc=True)
+            df = df[df["timestamp_utc"] >= sd]
         if end_date:
-            df = df[df["timestamp_utc"] <= pd.to_datetime(end_date)]
+            ed = pd.to_datetime(end_date, utc=True)
+            if len(end_date.strip()) == 10:
+                ed = ed + pd.Timedelta(hours=23, minutes=59, seconds=59)
+            df = df[df["timestamp_utc"] <= ed]
             
         if len(df) == 0:
             return {"status": "success", "data": [], "is_mock": is_mock}
