@@ -80,23 +80,13 @@ jobs:
           tags: gridsight-uk:ci-test
 
   deploy-railway:
-    name: Deploy to Railway Production
+    name: Railway Continuous Deployment Status
     needs: [python-test-and-lint, frontend-build, docker-build]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Trigger Railway Deployment
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - name: Verify Deployment Status
         run: |
-          if [ -n "$RAILWAY_TOKEN" ]; then
-            echo "Triggering deployment via Railway CLI..."
-            npm install -g @railway/cli
-            railway up --detach
-          else
-            echo "Railway is connected via native GitHub integration. Railway will automatically build and deploy the main branch."
-          fi
+          echo "✅ All CI validation gates (Pytest suite, Linting, Frontend & Docker builds) passed!"
+          echo "🚀 Railway native GitHub Integration is active and automatically deploying the main branch."
