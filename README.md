@@ -106,17 +106,27 @@ flowchart TD
         G5 --> B1
     end
 
-    classDef dataLayer fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    classDef modelLayer fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
-    classDef cloudLayer fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
-    classDef cicdLayer fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
-    classDef appLayer fill:#fbe9e7,stroke:#d84315,stroke-width:2px;
+    style A1 fill:#0288d1,color:#ffffff,stroke:#01579b,stroke-width:2px;
+    style A2 fill:#0288d1,color:#ffffff,stroke:#01579b,stroke-width:2px;
+    style A3 fill:#0288d1,color:#ffffff,stroke:#01579b,stroke-width:2px;
+    style A4 fill:#0288d1,color:#ffffff,stroke:#01579b,stroke-width:2px;
 
-    class A1,A2,A3,A4 dataLayer;
-    class M1,M2,M3,M4 modelLayer;
-    class S1,S2 cloudLayer;
-    class B1,F1 appLayer;
-    class G1,G2,G3,G4,G5 cicdLayer;
+    style M1 fill:#7b1fa2,color:#ffffff,stroke:#4a148c,stroke-width:2px;
+    style M2 fill:#7b1fa2,color:#ffffff,stroke:#4a148c,stroke-width:2px;
+    style M3 fill:#7b1fa2,color:#ffffff,stroke:#4a148c,stroke-width:2px;
+    style M4 fill:#7b1fa2,color:#ffffff,stroke:#4a148c,stroke-width:2px;
+
+    style S1 fill:#e65100,color:#ffffff,stroke:#bf360c,stroke-width:2px;
+    style S2 fill:#e65100,color:#ffffff,stroke:#bf360c,stroke-width:2px;
+
+    style B1 fill:#c2410c,color:#ffffff,stroke:#9a3412,stroke-width:2px;
+    style F1 fill:#c2410c,color:#ffffff,stroke:#9a3412,stroke-width:2px;
+
+    style G1 fill:#15803d,color:#ffffff,stroke:#166534,stroke-width:2px;
+    style G2 fill:#15803d,color:#ffffff,stroke:#166534,stroke-width:2px;
+    style G3 fill:#15803d,color:#ffffff,stroke:#166534,stroke-width:2px;
+    style G4 fill:#15803d,color:#ffffff,stroke:#166534,stroke-width:2px;
+    style G5 fill:#15803d,color:#ffffff,stroke:#166534,stroke-width:2px;
 ```
 
 <p align="center">
