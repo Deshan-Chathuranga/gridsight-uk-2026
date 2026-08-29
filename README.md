@@ -162,9 +162,27 @@ HF_TOKEN="hf_your_token_here"
 
 Generate a token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens). The token needs **read** access to the `gridsight-team` private repos.
 
-### 3.5 Verify Installation
+### 3.5 AWS Cloud Storage & LocalStack Setup
+
+GridSight UK includes native **AWS S3 object storage** support (`boto3`) for model checkpoints, parquet feature datasets, and fan plot diagnostics:
+
+- **AWS Free Tier (Cloud)**: Set your AWS credentials in `.env` (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_S3_BUCKET`). See the detailed guide in [`docs/AWS_SETUP_GUIDE.md`](file:///Users/savinianuradha/Documents/gridsight-uk-2026/docs/AWS_SETUP_GUIDE.md).
+- **LocalStack (Zero-Cost Local AWS Emulator)**: Run AWS S3 locally without an AWS account or credit card using Docker:
+  ```bash
+  docker-compose up localstack
+  ```
+
+### 3.6 CI/CD Pipelines & Continuous Deployment
+
+Automated testing and deployment are configured via GitHub Actions (`.github/workflows/ci.yml`):
+- **Automated Testing**: Runs unit & contract test suite (`pytest`) on Python 3.12 across all PRs and pushes to `main`.
+- **Code Quality**: Performs automated lint checks (`ruff`) and React frontend build validation (`npm run build`).
+- **Continuous Deployment (CD)**: Automatically builds and deploys successful commits on `main` branch to Railway Production Cloud.
+
+### 3.7 Verify Installation
 
 ```bash
+./venv/bin/pytest -o addopts=""
 ./venv/bin/python -m gridsight.data.sync_bronze --help
 ./venv/bin/python -m gridsight.data.silver --help
 ./venv/bin/python -m gridsight.data.gold --help
